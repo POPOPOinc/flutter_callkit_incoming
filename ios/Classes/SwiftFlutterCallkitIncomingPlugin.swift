@@ -258,6 +258,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         
         configurAudioSession()
         self.sharedProvider?.reportNewIncomingCall(with: uuid!, update: callUpdate) { error in
+            print("reportNewIncomingCall error: \(error)")
             if(error == nil) {
                 self.configurAudioSession()
                 let call = Call(uuid: uuid!, data: data)
