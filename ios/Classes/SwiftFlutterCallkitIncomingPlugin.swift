@@ -256,7 +256,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         return nil
     }
     
-    @objc public func showCallkitIncoming(_ data: Data, fromPushKit: Bool, completion: @escaping () -> Void) {
+    @objc public func showCallkitIncoming(_ data: Data, fromPushKit: Bool) {
         self.isFromPushKit = fromPushKit
         if(fromPushKit){
             self.data = data
