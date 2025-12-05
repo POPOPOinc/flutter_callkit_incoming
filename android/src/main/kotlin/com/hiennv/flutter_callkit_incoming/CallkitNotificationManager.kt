@@ -506,6 +506,12 @@ class CallkitNotificationManager(
                 if (TextUtils.isEmpty(textCallback)) context.getString(R.string.text_call_back) else textCallback
             )
 
+            // カスタムビューを先に設定（画像ロードが同期的に完了する場合に備えて）
+            notificationMissingBuilder?.setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            notificationMissingBuilder?.setCustomContentView(notificationMissingSmallViews)
+            notificationMissingBuilder?.setCustomBigContentView(notificationMissingViews)
+            Log.d("CallkitNotification", "Custom views set: small=${notificationMissingSmallViews != null}, big=${notificationMissingViews != null}")
+
             var avatarUrl = data.getString(CallkitConstants.EXTRA_CALLKIT_AVATAR, "")
             Log.d("CallkitNotification", "Custom notification: avatarUrl=$avatarUrl")
             if (!avatarUrl.isNullOrEmpty()) {
@@ -534,10 +540,6 @@ class CallkitNotificationManager(
                     targetMissingAvatarCustom
                 )
             }
-            notificationMissingBuilder?.setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            notificationMissingBuilder?.setCustomContentView(notificationMissingSmallViews)
-            notificationMissingBuilder?.setCustomBigContentView(notificationMissingViews)
-            Log.d("CallkitNotification", "Custom views set: small=${notificationMissingSmallViews != null}, big=${notificationMissingViews != null}")
         } else {
             notificationMissingBuilder?.setContentTitle(
                 data.getString(
