@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
 import android.text.format.DateFormat
+import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import androidx.appcompat.app.AlertDialog
@@ -126,17 +127,20 @@ class CallkitNotificationManager(
         return object : SafeTarget(
             notificationId,
             onLoaded = { bitmap ->
+                Log.d("CallkitNotification", "Custom notification image loaded successfully")
                 customViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
                 customViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
                 customSmallViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
                 customSmallViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
                 // 優先度はshowMissCallNotificationで設定済みなので変更しない
+                Log.d("CallkitNotification", "Showing custom notification with loaded image")
                 getNotificationManager().notify(
                     notificationId, builder.build()
                 )
             },
             onError = {
                 // 画像ロード失敗時もアイコンなしで通知を表示
+                Log.d("CallkitNotification", "Custom notification image load failed, showing without avatar")
                 getNotificationManager().notify(
                     notificationId, builder.build()
                 )
@@ -457,6 +461,7 @@ class CallkitNotificationManager(
 
         val isCustomNotification =
             data.getBoolean(CallkitConstants.EXTRA_CALLKIT_IS_CUSTOM_NOTIFICATION, false)
+        Log.d("CallkitNotification", "showMissCallNotification: isCustomNotification=$isCustomNotification")
         val count = data.getInt(CallkitConstants.EXTRA_CALLKIT_MISSED_CALL_COUNT, 1)
         if (count > 1) {
             notificationMissingBuilder?.setNumber(count)
@@ -502,6 +507,7 @@ class CallkitNotificationManager(
             )
 
             var avatarUrl = data.getString(CallkitConstants.EXTRA_CALLKIT_AVATAR, "")
+            Log.d("CallkitNotification", "Custom notification: avatarUrl=$avatarUrl")
             if (!avatarUrl.isNullOrEmpty()) {
                 if (!avatarUrl.startsWith("http://", true) && !avatarUrl.startsWith(
                         "https://",
@@ -513,6 +519,7 @@ class CallkitNotificationManager(
                 val headers =
                     data.getSerializable(CallkitConstants.EXTRA_CALLKIT_HEADERS) as HashMap<String, Any?>
 
+                Log.d("CallkitNotification", "Starting image load for custom notification: $avatarUrl")
                 // 毎回新しいtargetを作成して、前回の状態が残らないようにする
                 targetMissingAvatarCustom = createMissingAvatarTargetCustom(
                     missedNotificationId,
@@ -530,6 +537,7 @@ class CallkitNotificationManager(
             notificationMissingBuilder?.setStyle(NotificationCompat.DecoratedCustomViewStyle())
             notificationMissingBuilder?.setCustomContentView(notificationMissingSmallViews)
             notificationMissingBuilder?.setCustomBigContentView(notificationMissingViews)
+            Log.d("CallkitNotification", "Custom views set: small=${notificationMissingSmallViews != null}, big=${notificationMissingViews != null}")
         } else {
             notificationMissingBuilder?.setContentTitle(
                 data.getString(
@@ -595,8 +603,12 @@ class CallkitNotificationManager(
         if (notification != null) {
             // アバターURLがある場合は、画像ロード完了後に通知を表示するためここではスキップ
             val avatarUrl = data.getString(CallkitConstants.EXTRA_CALLKIT_AVATAR, "")
+            Log.d("CallkitNotification", "Final notification check: avatarUrl=$avatarUrl, isEmpty=${avatarUrl.isNullOrEmpty()}")
             if (avatarUrl.isNullOrEmpty()) {
+                Log.d("CallkitNotification", "Showing notification immediately (no avatar)")
                 getNotificationManager().notify(missedNotificationId, notification)
+            } else {
+                Log.d("CallkitNotification", "Skipping immediate notification (will show after image load)")
             }
         }
     }
