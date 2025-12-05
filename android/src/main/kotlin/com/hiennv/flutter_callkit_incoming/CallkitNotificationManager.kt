@@ -875,6 +875,15 @@ class CallkitNotificationManager(
             targetInComingAvatarCustom?.isCancelled = true
             targetInComingAvatarCustom = null
         }
+
+        targetOnGoingAvatarDefault?.let {
+            targetOnGoingAvatarDefault?.isCancelled = true
+            targetOnGoingAvatarDefault = null
+        }
+        targetOnGoingAvatarCustom?.let {
+            targetOnGoingAvatarCustom?.isCancelled = true
+            targetOnGoingAvatarCustom = null
+        }
     }
 
     fun clearMissCallNotification(data: Bundle) {
