@@ -94,52 +94,52 @@ class CallkitNotificationManager(
     }
 
     @SuppressLint("MissingPermission")
-    private fun createMissingAvatarTargetDefault(notificationId: Int): SafeTarget {
+    private fun createMissingAvatarTargetDefault(
+        notificationId: Int,
+        builder: NotificationCompat.Builder
+    ): SafeTarget {
         return object : SafeTarget(
             notificationId,
             onLoaded = { bitmap ->
-                notificationMissingBuilder?.setLargeIcon(bitmap)
+                builder.setLargeIcon(bitmap)
                 // 優先度はshowMissCallNotificationで設定済みなので変更しない
-                notificationMissingBuilder?.let {
-                    getNotificationManager().notify(
-                        notificationId, it.build()
-                    )
-                }
+                getNotificationManager().notify(
+                    notificationId, builder.build()
+                )
             },
             onError = {
                 // 画像ロード失敗時もアイコンなしで通知を表示
-                notificationMissingBuilder?.let {
-                    getNotificationManager().notify(
-                        notificationId, it.build()
-                    )
-                }
+                getNotificationManager().notify(
+                    notificationId, builder.build()
+                )
             }
         ) {}
     }
 
     @SuppressLint("MissingPermission")
-    private fun createMissingAvatarTargetCustom(notificationId: Int): SafeTarget {
+    private fun createMissingAvatarTargetCustom(
+        notificationId: Int,
+        builder: NotificationCompat.Builder,
+        customViews: RemoteViews?,
+        customSmallViews: RemoteViews?
+    ): SafeTarget {
         return object : SafeTarget(
             notificationId,
             onLoaded = { bitmap ->
-                notificationMissingViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
-                notificationMissingViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
-                notificationMissingSmallViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
-                notificationMissingSmallViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
+                customViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
+                customViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
+                customSmallViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
+                customSmallViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
                 // 優先度はshowMissCallNotificationで設定済みなので変更しない
-                notificationMissingBuilder?.let {
-                    getNotificationManager().notify(
-                        notificationId, it.build()
-                    )
-                }
+                getNotificationManager().notify(
+                    notificationId, builder.build()
+                )
             },
             onError = {
                 // 画像ロード失敗時もアイコンなしで通知を表示
-                notificationMissingBuilder?.let {
-                    getNotificationManager().notify(
-                        notificationId, it.build()
-                    )
-                }
+                getNotificationManager().notify(
+                    notificationId, builder.build()
+                )
             }
         ) {}
     }
@@ -514,7 +514,12 @@ class CallkitNotificationManager(
                     data.getSerializable(CallkitConstants.EXTRA_CALLKIT_HEADERS) as HashMap<String, Any?>
 
                 // 毎回新しいtargetを作成して、前回の状態が残らないようにする
-                targetMissingAvatarCustom = createMissingAvatarTargetCustom(missedNotificationId)
+                targetMissingAvatarCustom = createMissingAvatarTargetCustom(
+                    missedNotificationId,
+                    notificationMissingBuilder!!,
+                    notificationMissingViews,
+                    notificationMissingSmallViews
+                )
                 ImageLoaderProvider.loadImage(
                     context,
                     avatarUrl,
@@ -550,7 +555,7 @@ class CallkitNotificationManager(
 
                 // 毎回新しいtargetを作成して、前回の状態が残らないようにする
                 targetMissingAvatarDefault =
-                    createMissingAvatarTargetDefault(missedNotificationId)
+                    createMissingAvatarTargetDefault(missedNotificationId, notificationMissingBuilder!!)
                 ImageLoaderProvider.loadImage(
                     context,
                     avatarUrl,
