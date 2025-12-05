@@ -411,6 +411,9 @@ class CallkitNotificationManager(
 
     @SuppressLint("MissingPermission")
     fun showMissCallNotification(data: Bundle) {
+        // 前回の状態をクリア
+        notificationMissingViews = null
+        notificationMissingSmallViews = null
 
         val isMissedCallShow =
             data.getBoolean(CallkitConstants.EXTRA_CALLKIT_MISSED_CALL_SHOW, true)
