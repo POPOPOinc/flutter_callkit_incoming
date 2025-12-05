@@ -77,7 +77,8 @@ object ImageLoaderProvider {
 
 open class SafeTarget(
     private val notificationId: Int,
-    private val onLoaded: (Bitmap) -> Unit
+    private val onLoaded: (Bitmap) -> Unit,
+    private val onError: (() -> Unit)? = null
 ) : Target {
 
     var isCancelled = false
@@ -98,6 +99,9 @@ open class SafeTarget(
     override fun onError(error: Drawable?) {
         super.onError(error)
         Log.d("onError", "-")
+        if (!isCancelled) {
+            onError?.invoke()
+        }
     }
 
 
