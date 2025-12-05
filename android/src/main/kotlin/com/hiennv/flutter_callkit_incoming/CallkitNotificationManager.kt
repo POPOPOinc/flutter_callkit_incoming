@@ -97,12 +97,7 @@ class CallkitNotificationManager(
     private fun createMissingAvatarTargetDefault(notificationId: Int): SafeTarget {
         return object : SafeTarget(notificationId, onLoaded = { bitmap ->
             notificationMissingBuilder?.setLargeIcon(bitmap)
-            notificationMissingBuilder?.priority =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    NotificationManager.IMPORTANCE_LOW
-                } else {
-                    Notification.PRIORITY_LOW
-                }
+            // 優先度はshowMissCallNotificationで設定済みなので変更しない
             notificationMissingBuilder?.let {
                 getNotificationManager().notify(
                     notificationId, it.build()
@@ -118,12 +113,7 @@ class CallkitNotificationManager(
             notificationMissingViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
             notificationMissingSmallViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
             notificationMissingSmallViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
-            notificationMissingBuilder?.priority =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    NotificationManager.IMPORTANCE_LOW
-                } else {
-                    Notification.PRIORITY_LOW
-                }
+            // 優先度はshowMissCallNotificationで設定済みなので変更しない
             notificationMissingBuilder?.let {
                 getNotificationManager().notify(
                     notificationId, it.build()
@@ -572,7 +562,11 @@ class CallkitNotificationManager(
         }
         val notification = notificationMissingBuilder?.build()
         if (notification != null) {
-            getNotificationManager().notify(missedNotificationId, notification)
+            // アバターURLがある場合は、画像ロード完了後に通知を表示するためここではスキップ
+            val avatarUrl = data.getString(CallkitConstants.EXTRA_CALLKIT_AVATAR, "")
+            if (avatarUrl.isNullOrEmpty()) {
+                getNotificationManager().notify(missedNotificationId, notification)
+            }
         }
     }
 
