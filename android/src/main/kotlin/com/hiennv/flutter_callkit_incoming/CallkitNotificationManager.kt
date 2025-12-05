@@ -510,8 +510,8 @@ class CallkitNotificationManager(
                 val headers =
                     data.getSerializable(CallkitConstants.EXTRA_CALLKIT_HEADERS) as HashMap<String, Any?>
 
-                if (targetMissingAvatarCustom == null) targetMissingAvatarCustom =
-                    createMissingAvatarTargetCustom(missedNotificationId)
+                // 毎回新しいtargetを作成して、前回の状態が残らないようにする
+                targetMissingAvatarCustom = createMissingAvatarTargetCustom(missedNotificationId)
                 ImageLoaderProvider.loadImage(
                     context,
                     avatarUrl,
@@ -545,7 +545,8 @@ class CallkitNotificationManager(
                 val headers =
                     data.getSerializable(CallkitConstants.EXTRA_CALLKIT_HEADERS) as HashMap<String, Any?>
 
-                if (targetMissingAvatarDefault == null) targetMissingAvatarDefault =
+                // 毎回新しいtargetを作成して、前回の状態が残らないようにする
+                targetMissingAvatarDefault =
                     createMissingAvatarTargetDefault(missedNotificationId)
                 ImageLoaderProvider.loadImage(
                     context,
