@@ -1,3 +1,6 @@
+## 3.0.1
+* Popopo Custom Fix. 不在着信通知にアバター画像を設定すると二重に通知が表示される不具合を修正。
+
 ## 3.0.0
 * Using Plugin DSL for Android, thank @AAkira https://github.com/hiennguyen92/flutter_callkit_incoming/pull/743
 * Add Android native callback, thank @joshoconnor89 https://github.com/hiennguyen92/flutter_callkit_incoming/pull/736
