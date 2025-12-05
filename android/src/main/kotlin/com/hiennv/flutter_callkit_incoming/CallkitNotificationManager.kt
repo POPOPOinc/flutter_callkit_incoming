@@ -95,31 +95,53 @@ class CallkitNotificationManager(
 
     @SuppressLint("MissingPermission")
     private fun createMissingAvatarTargetDefault(notificationId: Int): SafeTarget {
-        return object : SafeTarget(notificationId, onLoaded = { bitmap ->
-            notificationMissingBuilder?.setLargeIcon(bitmap)
-            // 優先度はshowMissCallNotificationで設定済みなので変更しない
-            notificationMissingBuilder?.let {
-                getNotificationManager().notify(
-                    notificationId, it.build()
-                )
+        return object : SafeTarget(
+            notificationId,
+            onLoaded = { bitmap ->
+                notificationMissingBuilder?.setLargeIcon(bitmap)
+                // 優先度はshowMissCallNotificationで設定済みなので変更しない
+                notificationMissingBuilder?.let {
+                    getNotificationManager().notify(
+                        notificationId, it.build()
+                    )
+                }
+            },
+            onError = {
+                // 画像ロード失敗時もアイコンなしで通知を表示
+                notificationMissingBuilder?.let {
+                    getNotificationManager().notify(
+                        notificationId, it.build()
+                    )
+                }
             }
-        }) {}
+        ) {}
     }
 
     @SuppressLint("MissingPermission")
     private fun createMissingAvatarTargetCustom(notificationId: Int): SafeTarget {
-        return object : SafeTarget(notificationId, onLoaded = { bitmap ->
-            notificationMissingViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
-            notificationMissingViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
-            notificationMissingSmallViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
-            notificationMissingSmallViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
-            // 優先度はshowMissCallNotificationで設定済みなので変更しない
-            notificationMissingBuilder?.let {
-                getNotificationManager().notify(
-                    notificationId, it.build()
-                )
+        return object : SafeTarget(
+            notificationId,
+            onLoaded = { bitmap ->
+                notificationMissingViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
+                notificationMissingViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
+                notificationMissingSmallViews?.setImageViewBitmap(R.id.ivAvatar, bitmap)
+                notificationMissingSmallViews?.setViewVisibility(R.id.ivAvatar, View.VISIBLE)
+                // 優先度はshowMissCallNotificationで設定済みなので変更しない
+                notificationMissingBuilder?.let {
+                    getNotificationManager().notify(
+                        notificationId, it.build()
+                    )
+                }
+            },
+            onError = {
+                // 画像ロード失敗時もアイコンなしで通知を表示
+                notificationMissingBuilder?.let {
+                    getNotificationManager().notify(
+                        notificationId, it.build()
+                    )
+                }
             }
-        }) {}
+        ) {}
     }
 
     @SuppressLint("MissingPermission")
