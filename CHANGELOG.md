@@ -1,3 +1,6 @@
+## 3.0.2
+* CallkitNotificationServiceにMICROPHONEとMEDIA_PLAYBACKのForeground Serviceタイプを追加。TRTCなどのリアルタイム通信で必要なサービスタイプをCallKitの通知で兼任できるようになり、通知の重複を防止。
+
 ## 3.0.1
 * Popopo Custom Fix. 不在着信通知にアバター画像を設定すると二重に通知が表示される不具合を修正。
 
