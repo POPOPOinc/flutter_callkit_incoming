@@ -585,6 +585,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     public func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+        NSLog("[DEBUG_MUTE] CXAnswerCallAction received - call accepted")
         guard let call = self.callManager.callWithUUID(uuid: action.callUUID) else{
             action.fail()
             return
@@ -596,6 +597,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
 
         // 通話受諾時刻を記録（通話受諾直後のミュートイベントを無視するために使用）
         call.acceptedAt = Date()
+        NSLog("[DEBUG_MUTE] CXAnswerCallAction - acceptedAt set to: \(call.acceptedAt!)")
 
         call.hasConnectDidChange = { [weak self] in
             self?.sharedProvider?.reportOutgoingCall(with: call.uuid, connectedAt: call.connectedData)
@@ -667,6 +669,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     public func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
+        let now = Date()
+        NSLog("[DEBUG_MUTE] CXSetMutedCallAction received - isMuted: \(action.isMuted), time: \(now)")
         guard let call = self.callManager.callWithUUID(uuid: action.callUUID) else {
             action.fail()
             return
@@ -675,12 +679,16 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         // 通話受諾後500ms以内のisMuted=falseイベントは無視する
         // iOS CallKitは通話受諾後にデフォルト状態（ミュート解除）を送信するが、
         // これがアプリが設定した初期ミュート状態を上書きしてしまうため
-        if let acceptedAt = call.acceptedAt,
-           Date().timeIntervalSince(acceptedAt) < 0.5,
-           !action.isMuted {
-            NSLog("[DEBUG_MUTE] Ignoring initial mute=false event after call acceptance")
-            action.fulfill()
-            return
+        if let acceptedAt = call.acceptedAt {
+            let elapsed = now.timeIntervalSince(acceptedAt)
+            NSLog("[DEBUG_MUTE] CXSetMutedCallAction - elapsed since accept: \(elapsed)s")
+            if elapsed < 0.5 && !action.isMuted {
+                NSLog("[DEBUG_MUTE] Ignoring initial mute=false event after call acceptance (elapsed: \(elapsed)s)")
+                action.fulfill()
+                return
+            }
+        } else {
+            NSLog("[DEBUG_MUTE] CXSetMutedCallAction - acceptedAt is nil")
         }
         
         call.isMuted = action.isMuted
@@ -720,6 +728,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        NSLog("[DEBUG_MUTE] didActivate audioSession called")
 
         if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
             appDelegate.didActivateAudioSession(audioSession)
