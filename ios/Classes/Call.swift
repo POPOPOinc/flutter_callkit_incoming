@@ -54,6 +54,10 @@ public class Call: NSObject {
         }
     }
     
+    /// 通話が受諾された時刻
+    /// 通話受諾直後のミュートイベントを無視するために使用
+    var acceptedAt: Date?
+    
     var hasStartedConnecting: Bool{
         get{
             return connectData != nil

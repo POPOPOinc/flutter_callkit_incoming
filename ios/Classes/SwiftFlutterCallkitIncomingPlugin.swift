@@ -594,6 +594,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             self.configureAudioSession()
         }
 
+        // 通話受諾時刻を記録（通話受諾直後のミュートイベントを無視するために使用）
+        call.acceptedAt = Date()
 
         call.hasConnectDidChange = { [weak self] in
             self?.sharedProvider?.reportOutgoingCall(with: call.uuid, connectedAt: call.connectedData)
@@ -669,6 +671,18 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             action.fail()
             return
         }
+        
+        // 通話受諾後500ms以内のisMuted=falseイベントは無視する
+        // iOS CallKitは通話受諾後にデフォルト状態（ミュート解除）を送信するが、
+        // これがアプリが設定した初期ミュート状態を上書きしてしまうため
+        if let acceptedAt = call.acceptedAt,
+           Date().timeIntervalSince(acceptedAt) < 0.5,
+           !action.isMuted {
+            print("Ignoring initial mute=false event after call acceptance")
+            action.fulfill()
+            return
+        }
+        
         call.isMuted = action.isMuted
         sendMuteEvent(action.callUUID.uuidString, action.isMuted)
         action.fulfill()
