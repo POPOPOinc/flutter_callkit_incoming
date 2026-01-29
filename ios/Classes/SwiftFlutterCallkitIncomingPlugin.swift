@@ -678,7 +678,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         if let acceptedAt = call.acceptedAt,
            Date().timeIntervalSince(acceptedAt) < 0.5,
            !action.isMuted {
-            print("[DEBUG_MUTE] Ignoring initial mute=false event after call acceptance")
+            NSLog("[DEBUG_MUTE] Ignoring initial mute=false event after call acceptance")
             action.fulfill()
             return
         }
