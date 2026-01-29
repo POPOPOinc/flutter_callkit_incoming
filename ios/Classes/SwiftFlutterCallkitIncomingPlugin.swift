@@ -354,6 +354,11 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
               let call = self.callManager.callWithUUID(uuid: callId) else {
             return
         }
+        // アプリがリクエストしたミュート状態を記録
+        // これにより、CallKitからの不正なisMuted=falseイベントを無視できる
+        call.lastAppRequestedMuteState = isMuted
+        muteLogger.debug("[DEBUG_MUTE] muteCall called - isMuted: \(isMuted), lastAppRequestedMuteState set to: \(isMuted)")
+        
         if call.isMuted == isMuted {
             self.sendMuteEvent(callId.uuidString, isMuted)
         } else {
@@ -680,19 +685,36 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         
-        // 通話受諾後500ms以内のisMuted=falseイベントは無視する
-        // iOS CallKitは通話受諾後にデフォルト状態（ミュート解除）を送信するが、
-        // これがアプリが設定した初期ミュート状態を上書きしてしまうため
-        if let acceptedAt = call.acceptedAt {
-            let elapsed = now.timeIntervalSince(acceptedAt)
-            muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - elapsed since accept: \(elapsed)s")
-            if elapsed < 0.5 && !action.isMuted {
-                muteLogger.debug("[DEBUG_MUTE] Ignoring initial mute=false event after call acceptance (elapsed: \(elapsed)s)")
-                action.fulfill()
-                return
+        // アプリが明示的にミュート状態を設定している場合、
+        // それに矛盾するisMuted=falseイベントは無視する
+        // これにより、CallKitからの不正なミュート解除イベントを防ぐ
+        //
+        // ロジック:
+        // 1. アプリがmuteCall(true)を呼び出すと、lastAppRequestedMuteState = trueが設定される
+        // 2. CallKitからisMuted=trueのレスポンスが来ると、call.isMuted = trueに更新される
+        // 3. 不正なisMuted=falseイベントが来た場合:
+        //    - lastAppRequestedMuteState = true かつ call.isMuted = true なので、無視する
+        //    - 無視した後、lastAppRequestedMuteStateをクリアして、次のイベントは通過させる
+        // 4. ユーザーがCallKit UIからミュート解除した場合:
+        //    - lastAppRequestedMuteStateはクリア済みなので、イベントは通過する
+        if let lastAppRequestedMuteState = call.lastAppRequestedMuteState {
+            muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - lastAppRequestedMuteState: \(lastAppRequestedMuteState), action.isMuted: \(action.isMuted), call.isMuted: \(call.isMuted)")
+            
+            // アプリがミュート状態を設定していて、CallKitからミュート解除イベントが来た場合
+            if lastAppRequestedMuteState && !action.isMuted {
+                // アプリがリクエストした状態と現在のCallKit状態が一致している場合、
+                // これは不正なイベントなので無視する
+                if call.isMuted == lastAppRequestedMuteState {
+                    muteLogger.debug("[DEBUG_MUTE] Ignoring spurious mute=false event - app requested mute=true and current state matches")
+                    // 不正イベントを無視した後、lastAppRequestedMuteStateをクリア
+                    // これにより、次のisMuted=falseイベント（ユーザー操作）は通過する
+                    call.lastAppRequestedMuteState = nil
+                    action.fulfill()
+                    return
+                }
             }
         } else {
-            muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - acceptedAt is nil")
+            muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - lastAppRequestedMuteState is nil")
         }
         
         call.isMuted = action.isMuted
