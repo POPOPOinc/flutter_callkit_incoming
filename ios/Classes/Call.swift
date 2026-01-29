@@ -63,6 +63,10 @@ public class Call: NSObject {
     /// CallKitからの不正なisMuted=falseイベントを無視するために使用
     var lastAppRequestedMuteState: Bool? = nil
     
+    /// 不正イベントを既に無視したかどうか
+    /// 一度無視した後は、以降のイベントは全て通過させる（ユーザー操作を許可）
+    var hasIgnoredSpuriousEvent: Bool = false
+    
     var hasStartedConnecting: Bool{
         get{
             return connectData != nil
