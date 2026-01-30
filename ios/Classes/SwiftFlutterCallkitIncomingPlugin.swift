@@ -685,37 +685,40 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         
-        muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - lastAppRequestedMuteState: \(String(describing: call.lastAppRequestedMuteState)), lastIgnoredSpuriousEventTime: \(String(describing: call.lastIgnoredSpuriousEventTime)), action.isMuted: \(action.isMuted), call.isMuted: \(call.isMuted)")
+        muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - lastAppRequestedMuteState: \(String(describing: call.lastAppRequestedMuteState)), hasIgnoredSpuriousEvent: \(call.hasIgnoredSpuriousEvent), action.isMuted: \(action.isMuted), call.isMuted: \(call.isMuted)")
         
-        // アプリがミュート状態を設定していて、CallKitからミュート解除イベントが来た場合
-        if call.lastAppRequestedMuteState == true && !action.isMuted && call.isMuted {
-            // ダブルタップ検出: 前回の不正イベント無視から3秒以内に再度mute=falseが来た場合、
-            // ユーザーが意図的にミュート解除しようとしていると判断して許可する
-            if let lastIgnoredTime = call.lastIgnoredSpuriousEventTime {
-                let timeSinceLastIgnored = now.timeIntervalSince(lastIgnoredTime)
-                muteLogger.debug("[DEBUG_MUTE] Time since last ignored event: \(timeSinceLastIgnored) seconds")
-                
-                if timeSinceLastIgnored < 3.0 {
-                    muteLogger.debug("[DEBUG_MUTE] Double-tap detected - allowing user unmute action")
+        // 既に不正イベントを無視した場合は、以降のイベントは全て通過させる（ユーザー操作を許可）
+        if call.hasIgnoredSpuriousEvent {
+            muteLogger.debug("[DEBUG_MUTE] hasIgnoredSpuriousEvent is true - allowing event")
+            call.isMuted = action.isMuted
+            sendMuteEvent(action.callUUID.uuidString, action.isMuted)
+            action.fulfill()
+            return
+        }
+        
+        // アプリが明示的にミュート状態を設定している場合、
+        // それに矛盾するisMuted=falseイベントは無視する
+        // これにより、CallKitからの不正なミュート解除イベントを防ぐ
+        if let lastAppRequestedMuteState = call.lastAppRequestedMuteState {
+            // アプリがミュート状態を設定していて、CallKitからミュート解除イベントが来た場合
+            if lastAppRequestedMuteState && !action.isMuted {
+                // アプリがリクエストした状態と現在のCallKit状態が一致している場合、
+                // これは不正なイベントなので無視する
+                if call.isMuted == lastAppRequestedMuteState {
+                    muteLogger.debug("[DEBUG_MUTE] Ignoring spurious mute=false event - app requested mute=true and current state matches")
+                    // 不正イベントを無視したことを記録
+                    call.hasIgnoredSpuriousEvent = true
                     call.lastAppRequestedMuteState = nil
-                    call.lastIgnoredSpuriousEventTime = nil
-                    call.isMuted = action.isMuted
-                    sendMuteEvent(action.callUUID.uuidString, action.isMuted)
+                    
+                    // CallKit UIを正しい状態（ミュート）に復元する
+                    // これにより、CallKit UIが「ミュート解除」と表示されるのを防ぐ
+                    muteLogger.debug("[DEBUG_MUTE] Restoring CallKit UI to muted state")
+                    self.callManager.muteCall(call: call, isMuted: true)
+                    
                     action.fulfill()
                     return
                 }
             }
-            
-            // 不正イベントを無視し、時刻を記録
-            muteLogger.debug("[DEBUG_MUTE] Ignoring spurious mute=false event - app requested mute=true and current state matches")
-            call.lastIgnoredSpuriousEventTime = now
-            
-            // CallKit UIを正しい状態（ミュート）に復元する
-            muteLogger.debug("[DEBUG_MUTE] Restoring CallKit UI to muted state")
-            self.callManager.muteCall(call: call, isMuted: true)
-            
-            action.fulfill()
-            return
         }
         
         call.isMuted = action.isMuted

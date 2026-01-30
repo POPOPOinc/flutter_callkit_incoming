@@ -63,9 +63,9 @@ public class Call: NSObject {
     /// CallKitからの不正なisMuted=falseイベントを無視するために使用
     var lastAppRequestedMuteState: Bool? = nil
     
-    /// 不正イベントを最後に無視した時刻
-    /// ユーザーが短時間内に再度ミュート解除を試みた場合（ダブルタップ）を検出するために使用
-    var lastIgnoredSpuriousEventTime: Date? = nil
+    /// 不正イベントを既に無視したかどうか
+    /// 一度無視した後は、以降のイベントは全て通過させる（ユーザー操作を許可）
+    var hasIgnoredSpuriousEvent: Bool = false
     
     var hasStartedConnecting: Bool{
         get{
