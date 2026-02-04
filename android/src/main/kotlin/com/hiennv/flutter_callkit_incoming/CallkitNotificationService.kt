@@ -1,9 +1,11 @@
 package com.hiennv.flutter_callkit_incoming
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
@@ -88,9 +90,18 @@ class CallkitNotificationService : Service() {
             getCallkitNotificationManager()?.getOnGoingCallNotification(bundle, false)
         if (callkitNotification != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                // Base service types that don't require runtime permissions
+                var foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                
+                // Only add MICROPHONE service type if RECORD_AUDIO permission is granted
+                // This prevents crashes on lock screen when microphone permission is not granted
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
+                    == PackageManager.PERMISSION_GRANTED) {
+                    foregroundServiceType = foregroundServiceType or 
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                }
+                
                 startForeground(
                     callkitNotification.id,
                     callkitNotification.notification,
