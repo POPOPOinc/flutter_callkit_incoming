@@ -54,19 +54,6 @@ public class Call: NSObject {
         }
     }
     
-    /// 通話が受諾された時刻
-    /// 通話受諾直後のミュートイベントを無視するために使用
-    var acceptedAt: Date?
-    
-    /// アプリが最後にリクエストしたミュート状態
-    /// アプリがmuteCall()で明示的に設定した状態を追跡し、
-    /// CallKitからの不正なisMuted=falseイベントを無視するために使用
-    var lastAppRequestedMuteState: Bool? = nil
-    
-    /// 不正イベントを既に無視したかどうか
-    /// 一度無視した後は、以降のイベントは全て通過させる（ユーザー操作を許可）
-    var hasIgnoredSpuriousEvent: Bool = false
-    
     var hasStartedConnecting: Bool{
         get{
             return connectData != nil

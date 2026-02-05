@@ -678,49 +678,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     public func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
-        let now = Date()
-        muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction received - isMuted: \(action.isMuted), time: \(now)")
         guard let call = self.callManager.callWithUUID(uuid: action.callUUID) else {
             action.fail()
             return
         }
-        
-        muteLogger.debug("[DEBUG_MUTE] CXSetMutedCallAction - lastAppRequestedMuteState: \(String(describing: call.lastAppRequestedMuteState)), hasIgnoredSpuriousEvent: \(call.hasIgnoredSpuriousEvent), action.isMuted: \(action.isMuted), call.isMuted: \(call.isMuted)")
-        
-        // テスト用: 不正イベント無視の実装をコメントアウト
-        // // 既に不正イベントを無視した場合は、以降のイベントは全て通過させる（ユーザー操作を許可）
-        // if call.hasIgnoredSpuriousEvent {
-        //     muteLogger.debug("[DEBUG_MUTE] hasIgnoredSpuriousEvent is true - allowing event")
-        //     call.isMuted = action.isMuted
-        //     sendMuteEvent(action.callUUID.uuidString, action.isMuted)
-        //     action.fulfill()
-        //     return
-        // }
-        // 
-        // // アプリが明示的にミュート状態を設定している場合、
-        // // それに矛盾するisMuted=falseイベントは無視する
-        // // これにより、CallKitからの不正なミュート解除イベントを防ぐ
-        // if let lastAppRequestedMuteState = call.lastAppRequestedMuteState {
-        //     // アプリがミュート状態を設定していて、CallKitからミュート解除イベントが来た場合
-        //     if lastAppRequestedMuteState && !action.isMuted {
-        //         // アプリがリクエストした状態と現在のCallKit状態が一致している場合、
-        //         // これは不正なイベントなので無視する
-        //         if call.isMuted == lastAppRequestedMuteState {
-        //             muteLogger.debug("[DEBUG_MUTE] Ignoring spurious mute=false event - app requested mute=true and current state matches")
-        //             // 不正イベントを無視したことを記録
-        //             call.hasIgnoredSpuriousEvent = true
-        //             call.lastAppRequestedMuteState = nil
-        //             
-        //             // CallKit UIを正しい状態（ミュート）に復元する
-        //             // これにより、CallKit UIが「ミュート解除」と表示されるのを防ぐ
-        //             muteLogger.debug("[DEBUG_MUTE] Restoring CallKit UI to muted state")
-        //             self.callManager.muteCall(call: call, isMuted: true)
-        //             
-        //             action.fulfill()
-        //             return
-        //         }
-        //     }
-        // }
         
         call.isMuted = action.isMuted
         sendMuteEvent(action.callUUID.uuidString, action.isMuted)
