@@ -1,3 +1,6 @@
+## 3.0.3
+* マイク権限がない場合のフォアグラウンドサービスクラッシュを修正。マイク権限が付与されていない場合はMICROPHONEサービスタイプを除外してフォアグラウンドサービスを開始するように変更。
+
 ## 3.0.2
 * CallkitNotificationServiceにMICROPHONEとMEDIA_PLAYBACKのForeground Serviceタイプを追加。TRTCなどのリアルタイム通信で必要なサービスタイプをCallKitの通知で兼任できるようになり、通知の重複を防止。
 
