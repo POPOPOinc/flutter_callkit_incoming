@@ -634,6 +634,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         call.endCall()
         self.callManager.removeCall(call)
         if (self.answerCall == nil && self.outgoingCall == nil) {
+            // 未応答のコール（ユーザーが拒否） - 不在着信として記録
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, self.data?.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onDecline(call, action)
@@ -641,7 +642,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 action.fulfill()
             }
         }else {
+            // 応答済みのコール - 通常の通話終了として記録（NSUserActivityを作成しない）
             self.answerCall = nil
+
+            // 明示的に remoteEnded として報告することで、
+            // missedCallNotification の設定を無視し、NSUserActivity を作成しない
+            provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .remoteEnded)
+
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onEnd(call, action)
