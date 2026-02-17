@@ -647,7 +647,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 action.fulfill()
             }
         } else {
-            // 応答済みまたは発信中のコール - 通常の通話終了として記録（NSUserActivityを作成しない）
+            // 応答済みまたは発信中のコール - 通常の通話終了として記録
             if isThisCallAnswered {
                 self.answerCall = nil
             }
@@ -655,16 +655,16 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 self.outgoingCall = nil
             }
 
-            // 明示的に remoteEnded として報告することで、
-            // missedCallNotification の設定を無視し、NSUserActivity を作成しない
-            provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .remoteEnded)
-
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onEnd(call, action)
             } else {
                 action.fulfill()
             }
+
+            // action.fulfill()の後に remoteEnded として報告
+            // （CallKitの仕様上、NSUserActivityの作成は防げないが、試行として残す）
+            provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .remoteEnded)
         }
     }
     
