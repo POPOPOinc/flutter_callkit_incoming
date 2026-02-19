@@ -633,21 +633,38 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         call.endCall()
         self.callManager.removeCall(call)
-        if (self.answerCall == nil && self.outgoingCall == nil) {
+
+        // このコールが実際に応答済みかどうかをUUIDで確認
+        let isThisCallAnswered = (self.answerCall?.uuid == action.callUUID)
+        let isThisCallOutgoing = (self.outgoingCall?.uuid == action.callUUID)
+
+        if !isThisCallAnswered && !isThisCallOutgoing {
+            // 未応答のコール（ユーザーが拒否または別のコールが応答済み） - 不在着信として記録
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, self.data?.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onDecline(call, action)
             } else {
                 action.fulfill()
             }
-        }else {
-            self.answerCall = nil
+        } else {
+            // 応答済みまたは発信中のコール - 通常の通話終了として記録
+            if isThisCallAnswered {
+                self.answerCall = nil
+            }
+            if isThisCallOutgoing {
+                self.outgoingCall = nil
+            }
+
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onEnd(call, action)
             } else {
                 action.fulfill()
             }
+
+            // action.fulfill()の後に remoteEnded として報告
+            // （CallKitの仕様上、NSUserActivityの作成は防げないが、試行として残す）
+            provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .remoteEnded)
         }
     }
     
