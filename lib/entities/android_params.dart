@@ -18,6 +18,7 @@ class AndroidParams {
     this.textColor,
     this.incomingCallNotificationChannelName,
     this.missedCallNotificationChannelName,
+    this.ongoingCallNotificationChannelName,
     this.isShowFullLockedScreen,
     this.isImportant,
     this.isBot,
@@ -58,6 +59,9 @@ class AndroidParams {
 
   /// Notification channel name of missed call.
   final String? missedCallNotificationChannelName;
+
+  /// Notification channel name of ongoing call.
+  final String? ongoingCallNotificationChannelName;
 
   /// Show full locked screen.
   final bool? isShowFullLockedScreen;
