@@ -87,6 +87,9 @@ data class Data(val args: Map<String, Any?>) {
     @JsonProperty("missedCallNotificationChannelName")
     var missedCallNotificationChannelName: String? = null
 
+    @JsonProperty("ongoingCallNotificationChannelName")
+    var ongoingCallNotificationChannelName: String? = null
+
     @JsonProperty("missedNotificationId")
     var missedNotificationId: Int? = null
 
@@ -157,6 +160,7 @@ data class Data(val args: Map<String, Any?>) {
         incomingCallNotificationChannelName =
             android["incomingCallNotificationChannelName"] as? String
         missedCallNotificationChannelName = android["missedCallNotificationChannelName"] as? String
+        ongoingCallNotificationChannelName = android["ongoingCallNotificationChannelName"] as? String
         isShowFullLockedScreen = android["isShowFullLockedScreen"] as? Boolean ?: true
         isImportant = android["isImportant"] as? Boolean ?: false
         isBot = android["isBot"] as? Boolean ?: false
@@ -313,6 +317,10 @@ data class Data(val args: Map<String, Any?>) {
             CallkitConstants.EXTRA_CALLKIT_MISSED_CALL_NOTIFICATION_CHANNEL_NAME,
             missedCallNotificationChannelName
         )
+        bundle.putString(
+            CallkitConstants.EXTRA_CALLKIT_ONGOING_CALL_NOTIFICATION_CHANNEL_NAME,
+            ongoingCallNotificationChannelName
+        )
         bundle.putBoolean(
             CallkitConstants.EXTRA_CALLKIT_IS_SHOW_FULL_LOCKED_SCREEN,
             isShowFullLockedScreen
@@ -427,6 +435,9 @@ data class Data(val args: Map<String, Any?>) {
             )
             data.missedCallNotificationChannelName = bundle.getString(
                 CallkitConstants.EXTRA_CALLKIT_MISSED_CALL_NOTIFICATION_CHANNEL_NAME
+            )
+            data.ongoingCallNotificationChannelName = bundle.getString(
+                CallkitConstants.EXTRA_CALLKIT_ONGOING_CALL_NOTIFICATION_CHANNEL_NAME
             )
             data.isShowFullLockedScreen = bundle.getBoolean(
                 CallkitConstants.EXTRA_CALLKIT_IS_SHOW_FULL_LOCKED_SCREEN,
