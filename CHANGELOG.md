@@ -1,3 +1,6 @@
+## 3.0.4
+* `AndroidParams` に `ongoingCallNotificationChannelName` フィールドを追加。Dart側からAndroid通話中通知チャネル名をカスタマイズできるよう対応。
+
 ## 3.0.3
 * マイク権限がない場合のフォアグラウンドサービスクラッシュを修正。マイク権限が付与されていない場合はMICROPHONEサービスタイプを除外してフォアグラウンドサービスを開始するように変更。
 
