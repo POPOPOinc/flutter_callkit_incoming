@@ -20,7 +20,7 @@ class CallManager: NSObject {
         self.sharedProvider = sharedProvider
     }
     
-    func startCall(_ data: Data) {
+    func startCall(_ data: Data, completion: (() -> Void)? = nil) {
         let handle = CXHandle(type: self.getHandleType(data.handleType), value: data.getEncryptHandle())
         let uuid = UUID(uuidString: data.uuid)
         let startCallAction = CXStartCallAction(call: uuid!, handle: handle)
@@ -38,6 +38,7 @@ class CallManager: NSObject {
             callUpdate.hasVideo = data.type > 0 ? true : false
             callUpdate.localizedCallerName = data.nameCaller
             self.sharedProvider?.reportCall(with: uuid!, updated: callUpdate)
+            completion?()
         })
     }
     

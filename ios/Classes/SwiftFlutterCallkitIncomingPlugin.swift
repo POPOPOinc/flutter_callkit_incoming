@@ -336,13 +336,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     
-    @objc public func startCall(_ data: Data, fromPushKit: Bool) {
+    @objc public func startCall(_ data: Data, fromPushKit: Bool, completion: (() -> Void)? = nil) {
         self.isFromPushKit = fromPushKit
         if(fromPushKit){
             self.data = data
         }
         initCallkitProvider(data)
-        self.callManager.startCall(data)
+        self.callManager.startCall(data, completion: completion)
     }
     
     @objc public func muteCall(_ callId: String, isMuted: Bool) {
