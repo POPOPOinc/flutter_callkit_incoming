@@ -1,3 +1,6 @@
+## 3.0.6
+* CallManager.startCall および SwiftFlutterCallkitIncomingPlugin.startCall にオプションの completion コールバックパラメータを追加。CXCallController のトランザクションが成功し、CXProvider へのcall update報告が完了した後に completion が呼ばれます。
+
 ## 3.0.5
 * `AndroidParams` に `ongoingCallNotificationChannelName` フィールドを追加。Dart側からAndroid通話中通知チャネル名をカスタマイズできるよう対応。
 
