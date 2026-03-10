@@ -101,6 +101,15 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
                     instance.callkitSoundPlayerManager = CallkitSoundPlayerManager(context)
                     instance.callkitNotificationManager = CallkitNotificationManager(context, instance.callkitSoundPlayerManager)
                 }
+                // onDetachedFromActivity()でcontextがnullに設定された場合に復元する。
+                // アプリがタスク一覧からスワイプで終了されると、onDetachedFromActivity()で
+                // context=nullになるが、プロセスが生存している場合、FCMバックグラウンドハンドラーで
+                // 新しいFlutterEngineが作成されてinitSharedInstance()が再度呼ばれる。
+                // この時instanceは既に存在するためelse分岐に入るが、contextが更新されないと
+                // showCallkitIncoming()内のcontext?.sendBroadcast()がno-opになり通知が表示されない。
+                if (instance.context == null) {
+                    instance.context = context
+                }
             }
 
             val channel = MethodChannel(binaryMessenger, "flutter_callkit_incoming")
@@ -199,6 +208,15 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
                 "showCallkitIncoming" -> {
                     val data = Data(call.arguments() ?: HashMap())
                     data.from = "notification"
+                    // 通知を直接表示する。onMethodCall実行時はFlutterEngineが
+                    // まだ生存しているため、callkitNotificationManagerは有効。
+                    // sendBroadcast経由だと非同期配信のためonDetachedFromEngineで
+                    // マネージャーが破棄された後にBroadcastReceiverが発火し、
+                    // 通知が表示されない競合が発生する。
+                    // 通知IDはコールIDから生成されるため、BroadcastReceiverが
+                    // 後から同じ通知を表示しても更新されるだけで重複しない。
+                    callkitNotificationManager?.showIncomingNotification(data.toBundle())
+                    addCall(context, data)
                     //send BroadcastReceiver
                     context?.sendBroadcast(
                         CallkitIncomingBroadcastReceiver.getIntentIncoming(
@@ -385,8 +403,6 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
         methodChannels.remove(binding.binaryMessenger)?.setMethodCallHandler(null)
         eventChannels.remove(binding.binaryMessenger)?.setStreamHandler(null)
 
-        // Only destroy managers when all engine bindings are detached
-        // This prevents issues when foreground services detach but main app is still running
         if (methodChannels.isEmpty() && eventChannels.isEmpty()) {
             instance.callkitSoundPlayerManager?.destroy()
             instance.callkitNotificationManager?.destroy()
