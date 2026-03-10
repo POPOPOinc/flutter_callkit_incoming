@@ -94,16 +94,12 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
         when (action) {
             "${context.packageName}.${CallkitConstants.ACTION_CALL_INCOMING}" -> {
                 try {
-                    // getOrCreateCallkitNotificationManager を使用して、
-                    // onDetachedFromEngine() でマネージャーが破棄された後に
-                    // ブロードキャストが非同期で配信される競合に対応する。
-                    // マネージャーが null の場合は receiver の context で再作成する。
-                    val manager = FlutterCallkitIncomingPlugin.getInstance()
-                        ?.getOrCreateCallkitNotificationManager(context)
-                        ?: getCallkitNotificationManager()
-                    manager?.showIncomingNotification(data)
+                    // 通知表示とaddCallはFlutterCallkitIncomingPlugin.onMethodCall内で
+                    // 直接実行済み。BroadcastReceiverではFlutterイベント配信のみ行う。
+                    // onMethodCall実行時はFlutterEngineが生存しているため確実に動作するが、
+                    // sendBroadcastは非同期配信のためonDetachedFromEngineとの競合で
+                    // マネージャーがnullになる可能性がある。
                     sendEventFlutter(CallkitConstants.ACTION_CALL_INCOMING, data)
-                    addCall(context, Data.fromBundle(data))
                 } catch (error: Exception) {
                     Log.e(TAG, null, error)
                 }
