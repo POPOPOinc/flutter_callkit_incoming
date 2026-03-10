@@ -1,3 +1,8 @@
+## 3.0.7
+* Android: アプリがタスク一覧からスワイプで終了された後、バックグラウンドでコール着信した際に通知が表示されない問題を修正。`initSharedInstance`のelse分岐で`context`がnullの場合に復元するように変更。
+* Android: `showCallkitIncoming`のメソッドハンドラーで通知を直接表示するように変更。`sendBroadcast`の非同期配信と`onDetachedFromEngine`の競合により通知が表示されない問題を回避。
+* Android: BroadcastReceiverの`ACTION_CALL_INCOMING`ハンドラーから`showIncomingNotification`と`addCall`を削除し、Flutterイベント配信のみを行うように変更。これにより着信音が二重に再生される問題を修正。
+
 ## 3.0.6
 * CallManager.startCall および SwiftFlutterCallkitIncomingPlugin.startCall にオプションの completion コールバックパラメータを追加。CXCallController のトランザクションが成功し、CXProvider へのcall update報告が完了した後に completion が呼ばれます。
 
