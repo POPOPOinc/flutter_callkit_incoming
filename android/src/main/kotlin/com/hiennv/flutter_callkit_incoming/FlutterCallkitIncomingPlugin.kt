@@ -101,6 +101,15 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
                     instance.callkitSoundPlayerManager = CallkitSoundPlayerManager(context)
                     instance.callkitNotificationManager = CallkitNotificationManager(context, instance.callkitSoundPlayerManager)
                 }
+                // onDetachedFromActivity()でcontextがnullに設定された場合に復元する。
+                // アプリがタスク一覧からスワイプで終了されると、onDetachedFromActivity()で
+                // context=nullになるが、プロセスが生存している場合、FCMバックグラウンドハンドラーで
+                // 新しいFlutterEngineが作成されてinitSharedInstance()が再度呼ばれる。
+                // この時instanceは既に存在するためelse分岐に入るが、contextが更新されないと
+                // showCallkitIncoming()内のcontext?.sendBroadcast()がno-opになり通知が表示されない。
+                if (instance.context == null) {
+                    instance.context = context
+                }
             }
 
             val channel = MethodChannel(binaryMessenger, "flutter_callkit_incoming")
