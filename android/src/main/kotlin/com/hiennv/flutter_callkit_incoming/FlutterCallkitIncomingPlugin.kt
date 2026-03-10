@@ -139,6 +139,20 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
         return callkitNotificationManager
     }
 
+    /**
+     * BroadcastReceiverから呼ばれる。onDetachedFromEngine()でマネージャーが
+     * 破棄された後にブロードキャストが非同期で配信される競合に対応するため、
+     * マネージャーがnullの場合は渡されたcontextで再作成する。
+     */
+    fun getOrCreateCallkitNotificationManager(context: Context): CallkitNotificationManager {
+        callkitNotificationManager?.let { return it }
+        val soundManager = CallkitSoundPlayerManager(context)
+        callkitSoundPlayerManager = soundManager
+        val notifManager = CallkitNotificationManager(context, soundManager)
+        callkitNotificationManager = notifManager
+        return notifManager
+    }
+
     fun getCallkitSoundPlayerManager(): CallkitSoundPlayerManager? {
         return callkitSoundPlayerManager
     }
@@ -394,16 +408,12 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
         methodChannels.remove(binding.binaryMessenger)?.setMethodCallHandler(null)
         eventChannels.remove(binding.binaryMessenger)?.setStreamHandler(null)
 
-        // callkitNotificationManager と callkitSoundPlayerManager は破棄しない。
-        // showCallkitIncoming() は context?.sendBroadcast() でインテントを送信し、
-        // CallkitIncomingBroadcastReceiver が受信して callkitNotificationManager を使って
-        // 通知を表示する。このブロードキャスト配信は非同期で行われるため、
-        // FlutterEngine の破棄（onDetachedFromEngine）とブロードキャスト受信の間に
-        // 競合が発生する可能性がある。マネージャーをここで破棄すると、
-        // BroadcastReceiver が getCallkitNotificationManager() で null を取得し、
-        // 通知が表示されない。
-        // マネージャーは initSharedInstance() で必要に応じて再作成されるため、
-        // ここでの破棄は不要。
+        if (methodChannels.isEmpty() && eventChannels.isEmpty()) {
+            instance.callkitSoundPlayerManager?.destroy()
+            instance.callkitNotificationManager?.destroy()
+            instance.callkitSoundPlayerManager = null
+            instance.callkitNotificationManager = null
+        }
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -422,10 +432,7 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
     }
 
     override fun onDetachedFromActivity() {
-        // contextはnullにしない。ApplicationContextはActivityのライフサイクルに
-        // 依存しないため、Activity切り離し後もBroadcastReceiver経由の通知表示に
-        // 安全に使用できる。contextをnullにすると、showCallkitIncoming()内の
-        // context?.sendBroadcast()がno-opになり通知が表示されない。
+        instance.context = null
         instance.activity = null
     }
 

@@ -94,7 +94,14 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
         when (action) {
             "${context.packageName}.${CallkitConstants.ACTION_CALL_INCOMING}" -> {
                 try {
-                    getCallkitNotificationManager()?.showIncomingNotification(data)
+                    // getOrCreateCallkitNotificationManager を使用して、
+                    // onDetachedFromEngine() でマネージャーが破棄された後に
+                    // ブロードキャストが非同期で配信される競合に対応する。
+                    // マネージャーが null の場合は receiver の context で再作成する。
+                    val manager = FlutterCallkitIncomingPlugin.getInstance()
+                        ?.getOrCreateCallkitNotificationManager(context)
+                        ?: getCallkitNotificationManager()
+                    manager?.showIncomingNotification(data)
                     sendEventFlutter(CallkitConstants.ACTION_CALL_INCOMING, data)
                     addCall(context, Data.fromBundle(data))
                 } catch (error: Exception) {
