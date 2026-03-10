@@ -139,20 +139,6 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
         return callkitNotificationManager
     }
 
-    /**
-     * BroadcastReceiverから呼ばれる。onDetachedFromEngine()でマネージャーが
-     * 破棄された後にブロードキャストが非同期で配信される競合に対応するため、
-     * マネージャーがnullの場合は渡されたcontextで再作成する。
-     */
-    fun getOrCreateCallkitNotificationManager(context: Context): CallkitNotificationManager {
-        callkitNotificationManager?.let { return it }
-        val soundManager = CallkitSoundPlayerManager(context)
-        callkitSoundPlayerManager = soundManager
-        val notifManager = CallkitNotificationManager(context, soundManager)
-        callkitNotificationManager = notifManager
-        return notifManager
-    }
-
     fun getCallkitSoundPlayerManager(): CallkitSoundPlayerManager? {
         return callkitSoundPlayerManager
     }
