@@ -222,6 +222,15 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
                 "showCallkitIncoming" -> {
                     val data = Data(call.arguments() ?: HashMap())
                     data.from = "notification"
+                    // 通知を直接表示する。onMethodCall実行時はFlutterEngineが
+                    // まだ生存しているため、callkitNotificationManagerは有効。
+                    // sendBroadcast経由だと非同期配信のためonDetachedFromEngineで
+                    // マネージャーが破棄された後にBroadcastReceiverが発火し、
+                    // 通知が表示されない競合が発生する。
+                    // 通知IDはコールIDから生成されるため、BroadcastReceiverが
+                    // 後から同じ通知を表示しても更新されるだけで重複しない。
+                    callkitNotificationManager?.showIncomingNotification(data.toBundle())
+                    addCall(context, data)
                     //send BroadcastReceiver
                     context?.sendBroadcast(
                         CallkitIncomingBroadcastReceiver.getIntentIncoming(
