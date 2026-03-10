@@ -394,14 +394,16 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
         methodChannels.remove(binding.binaryMessenger)?.setMethodCallHandler(null)
         eventChannels.remove(binding.binaryMessenger)?.setStreamHandler(null)
 
-        // Only destroy managers when all engine bindings are detached
-        // This prevents issues when foreground services detach but main app is still running
-        if (methodChannels.isEmpty() && eventChannels.isEmpty()) {
-            instance.callkitSoundPlayerManager?.destroy()
-            instance.callkitNotificationManager?.destroy()
-            instance.callkitSoundPlayerManager = null
-            instance.callkitNotificationManager = null
-        }
+        // callkitNotificationManager と callkitSoundPlayerManager は破棄しない。
+        // showCallkitIncoming() は context?.sendBroadcast() でインテントを送信し、
+        // CallkitIncomingBroadcastReceiver が受信して callkitNotificationManager を使って
+        // 通知を表示する。このブロードキャスト配信は非同期で行われるため、
+        // FlutterEngine の破棄（onDetachedFromEngine）とブロードキャスト受信の間に
+        // 競合が発生する可能性がある。マネージャーをここで破棄すると、
+        // BroadcastReceiver が getCallkitNotificationManager() で null を取得し、
+        // 通知が表示されない。
+        // マネージャーは initSharedInstance() で必要に応じて再作成されるため、
+        // ここでの破棄は不要。
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -420,7 +422,10 @@ class FlutterCallkitIncomingPlugin : FlutterPlugin, MethodCallHandler, ActivityA
     }
 
     override fun onDetachedFromActivity() {
-        instance.context = null
+        // contextはnullにしない。ApplicationContextはActivityのライフサイクルに
+        // 依存しないため、Activity切り離し後もBroadcastReceiver経由の通知表示に
+        // 安全に使用できる。contextをnullにすると、showCallkitIncoming()内の
+        // context?.sendBroadcast()がno-opになり通知が表示されない。
         instance.activity = null
     }
 
