@@ -1,5 +1,5 @@
 ## 3.0.8
-* iOS: `configureAudioSession()` から `setActive()` の呼び出しを削除。CallKit が `didActivateAudioSession` / `didDeactivateAudioSession` で AudioSession の active 状態を管理するため、プラグイン側で `setActive` を呼ぶと CallKit や TRTC SDK の AudioSession 管理と競合し、Audio Device Handle の喪失を引き起こしていた。Category / Mode / SampleRate / IOBufferDuration の設定のみ行うように変更。
+* iOS: `configureAudioSession()` から `setActive()` の呼び出しを削除。AudioSession の active 状態管理は CallKit（`didActivateAudioSession` / `didDeactivateAudioSession`）に委譲し、プラグイン側では Category / Mode / SampleRate / IOBufferDuration の設定のみ行うように変更。
 
 ## 3.0.7
 * Android: アプリがタスク一覧からスワイプで終了された後、バックグラウンドでコール着信した際に通知が表示されない問題を修正。`initSharedInstance`のelse分岐で`context`がnullの場合に復元するように変更。
