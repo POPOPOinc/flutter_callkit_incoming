@@ -400,6 +400,44 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.callManager.endCallAlls()
     }
     
+    @objc public func reportMissedCall(_ data: Data, completion: @escaping () -> Void) {
+        initCallkitProvider(data)
+        
+        guard let provider = self.sharedProvider else {
+            completion()
+            return
+        }
+        
+        let originalMaxCallGroups = provider.configuration.maximumCallGroups
+        let updatedConfig = provider.configuration
+        updatedConfig.maximumCallGroups = max(originalMaxCallGroups + 1, 2)
+        provider.configuration = updatedConfig
+        
+        let uuid = UUID(uuidString: data.uuid)!
+        
+        var handle: CXHandle?
+        handle = CXHandle(type: self.getHandleType(data.handleType), value: data.getEncryptHandle())
+        
+        let callUpdate = CXCallUpdate()
+        callUpdate.remoteHandle = handle
+        callUpdate.supportsDTMF = data.supportsDTMF
+        callUpdate.supportsHolding = data.supportsHolding
+        callUpdate.supportsGrouping = data.supportsGrouping
+        callUpdate.supportsUngrouping = data.supportsUngrouping
+        callUpdate.hasVideo = data.type > 0
+        callUpdate.localizedCallerName = data.nameCaller
+        
+        provider.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
+            provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
+            
+            let restoredConfig = provider.configuration
+            restoredConfig.maximumCallGroups = originalMaxCallGroups
+            provider.configuration = restoredConfig
+            
+            completion()
+        }
+    }
+    
     public func saveEndCall(_ uuid: String, _ reason: Int) {
         switch reason {
         case 1:
