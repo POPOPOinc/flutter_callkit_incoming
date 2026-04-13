@@ -1,3 +1,6 @@
+## 3.0.9
+* iOS: 同時着信時に後発コールをiOS着信履歴に不在着信として記録する `reportMissedCall` メソッドを追加。`sharedProvider` 経由で `reportNewIncomingCall` を呼び出した後、0.5秒後に `CXCallController` 経由で `CXEndCallAction` を送信して不在着信として終了する。`reportCall(.unanswered)` ではなく `CXEndCallAction` → `action.fulfill()` の正規パスを使用することで、既存コールの着信履歴を破壊しない。
+
 ## 3.0.8
 * iOS: `configureAudioSession()` から `setActive()` の呼び出しを削除。AudioSession の active 状態管理は CallKit（`didActivateAudioSession` / `didDeactivateAudioSession`）に委譲し、プラグイン側では Category / Mode / SampleRate / IOBufferDuration の設定のみ行うように変更。
 
