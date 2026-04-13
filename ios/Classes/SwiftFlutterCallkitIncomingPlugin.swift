@@ -40,6 +40,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var isFromPushKit: Bool = false
     private var silenceEvents: Bool = false
     private let devicePushTokenVoIP = "DevicePushTokenVoIP"
+    
+    private var pendingMissedCallUUIDs: [UUID] = []
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -401,6 +403,57 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.callManager.endCallAlls()
     }
     
+    /// 不在着信をCallKitに報告し、iOS着信履歴に記録する。
+    /// sharedProvider経由でreportNewIncomingCallを呼び出した後、
+    /// 0.5秒後にCXCallController経由でCXEndCallActionを送信して不在着信として終了する。
+    /// reportCall(.unanswered)ではなくCXEndCallAction→action.fulfill()の正規パスを使用することで、
+    /// 既存コールの着信履歴を破壊しない。
+    @objc public func reportMissedCall(_ data: Data, completion: @escaping () -> Void) {
+        guard let provider = self.sharedProvider else {
+            completion()
+            return
+        }
+        
+        let uuid = UUID(uuidString: data.uuid)!
+        
+        var handle: CXHandle?
+        handle = CXHandle(type: self.getHandleType(data.handleType), value: data.getEncryptHandle())
+        
+        let callUpdate = CXCallUpdate()
+        callUpdate.remoteHandle = handle
+        callUpdate.supportsDTMF = data.supportsDTMF
+        callUpdate.supportsHolding = data.supportsHolding
+        callUpdate.supportsGrouping = data.supportsGrouping
+        callUpdate.supportsUngrouping = data.supportsUngrouping
+        callUpdate.hasVideo = data.type > 0
+        callUpdate.localizedCallerName = data.nameCaller
+        
+        provider.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
+            if error == nil {
+                self.pendingMissedCallUUIDs.append(uuid)
+                
+                // 0.5秒後にCXCallController経由で即時終了（1件目がまだアクティブ中に終了させる）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self else { return }
+                    if self.pendingMissedCallUUIDs.contains(uuid) {
+                        self.endPendingMissedCalls()
+                    }
+                }
+            }
+            completion()
+        }
+    }
+    
+    private func endPendingMissedCalls() {
+        guard !self.pendingMissedCallUUIDs.isEmpty else { return }
+        let controller = CXCallController()
+        for uuid in self.pendingMissedCallUUIDs {
+            let endCallAction = CXEndCallAction(call: uuid)
+            let transaction = CXTransaction(action: endCallAction)
+            controller.request(transaction) { _ in }
+        }
+    }
+    
     public func saveEndCall(_ uuid: String, _ reason: Int) {
         switch reason {
         case 1:
@@ -515,7 +568,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 ])
                 
                 try session.setMode(self.getAudioSessionMode(data?.audioSessionMode))
-                try session.setActive(data?.audioSessionActive ?? true)
+                // AudioSessionのactive状態管理はCallKitに委譲
                 try session.setPreferredSampleRate(data?.audioSessionPreferredSampleRate ?? 44100.0)
                 try session.setPreferredIOBufferDuration(data?.audioSessionPreferredIOBufferDuration ?? 0.005)
             }catch{
@@ -622,6 +675,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     
     
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        // pendingMissedCallの場合はcallManagerにないので、そのままfulfillして不在着信として記録
+        if self.pendingMissedCallUUIDs.contains(action.callUUID) {
+            self.pendingMissedCallUUIDs.removeAll { $0 == action.callUUID }
+            action.fulfill()
+            return
+        }
+        
         guard let call = self.callManager.callWithUUID(uuid: action.callUUID) else {
             if(self.answerCall == nil && self.outgoingCall == nil){
                 sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TIMEOUT, self.data?.toJSON())
