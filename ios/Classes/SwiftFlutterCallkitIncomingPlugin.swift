@@ -515,7 +515,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 ])
                 
                 try session.setMode(self.getAudioSessionMode(data?.audioSessionMode))
-                try session.setActive(data?.audioSessionActive ?? true)
+                // setActive の呼び出しを削除:
+                // AudioSession の active 状態管理は CallKit
+                // (didActivateAudioSession / didDeactivateAudioSession) に委譲する。
+                // プラグイン側では Category / Mode / SampleRate / IOBufferDuration の設定のみ行う。
                 try session.setPreferredSampleRate(data?.audioSessionPreferredSampleRate ?? 44100.0)
                 try session.setPreferredIOBufferDuration(data?.audioSessionPreferredIOBufferDuration ?? 0.005)
             }catch{
