@@ -1,3 +1,6 @@
+## 3.0.9
+* iOS: `CXProvider` の `configuration` を `initCallkitProvider` 呼び出し毎に更新するように変更。従来は初回作成時のみ設定していたため、着信音（`ringtoneSound`）が最初のコールの設定にキャッシュされ、以降のコールで異なる着信音を指定しても反映されない問題を修正。
+
 ## 3.0.8
 * iOS: `configureAudioSession()` から `setActive()` の呼び出しを削除。AudioSession の active 状態管理は CallKit（`didActivateAudioSession` / `didDeactivateAudioSession`）に委譲し、プラグイン側では Category / Mode / SampleRate / IOBufferDuration の設定のみ行うように変更。
 
