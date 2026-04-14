@@ -743,16 +743,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                     action.fulfill()
                 }
                 
-                // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
-                // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
-                // CallKit UIが1件目の名前を表示し続ける問題を修正
-                if let activeCall = self.answerCall {
-                    let update = CXCallUpdate()
-                    update.localizedCallerName = activeCall.data.nameCaller
-                    update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
-                    update.hasVideo = activeCall.data.type > 0
-                    provider.reportCall(with: activeCall.uuid, updated: update)
-                }
             } else {
                 // 通常の通話終了（ユーザーが手動で終了）
                 sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
@@ -766,6 +756,22 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             // action.fulfill()の後に remoteEnded として報告
             // （CallKitの仕様上、NSUserActivityの作成は防げないが、試行として残す）
             provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .remoteEnded)
+            
+            // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
+            // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
+            // CallKit UIが1件目の名前を表示し続ける問題を修正
+            // reportCall(with:endedAt:reason:.remoteEnded)の後に遅延実行することで、
+            // CallKitが1件目の終了処理を完了してからUIを更新する
+            if isAppInitiatedEnd, let activeCall = self.answerCall {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self else { return }
+                    let update = CXCallUpdate()
+                    update.localizedCallerName = activeCall.data.nameCaller
+                    update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
+                    update.hasVideo = activeCall.data.type > 0
+                    self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
+                }
+            }
         }
     }
     
