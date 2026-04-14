@@ -1,9 +1,3 @@
-## 3.0.9
-* iOS: 同時着信時に後発コールをiOS着信履歴に不在着信として記録する `reportMissedCall` メソッドを追加。`sharedProvider` 経由で `reportNewIncomingCall` を呼び出した後、0.5秒後に `CXCallController` 経由で `CXEndCallAction` を送信して不在着信として終了する。`reportCall(.unanswered)` ではなく `CXEndCallAction` → `action.fulfill()` の正規パスを使用することで、既存コールの着信履歴を破壊しない。
-
-## 3.0.8
-* iOS: `configureAudioSession()` から `setActive()` の呼び出しを削除。AudioSession の active 状態管理は CallKit（`didActivateAudioSession` / `didDeactivateAudioSession`）に委譲し、プラグイン側では Category / Mode / SampleRate / IOBufferDuration の設定のみ行うように変更。
-
 ## 3.0.7
 * Android: アプリがタスク一覧からスワイプで終了された後、バックグラウンドでコール着信した際に通知が表示されない問題を修正。`initSharedInstance`のelse分岐で`context`がnullの場合に復元するように変更。
 * Android: `showCallkitIncoming`のメソッドハンドラーで通知を直接表示するように変更。`sendBroadcast`の非同期配信と`onDetachedFromEngine`の競合により通知が表示されない問題を回避。
