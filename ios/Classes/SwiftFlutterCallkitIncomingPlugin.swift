@@ -733,11 +733,23 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 self.outgoingCall = nil
             }
 
-            sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
-            if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
-                appDelegate.onEnd(call, action)
+            if isAppInitiatedEnd {
+                // アプリ起因の終了（例: 2件目受諾時に1件目を終了）
+                // ACTION_CALL_ENDEDイベントをスキップして、Flutter側の_handleCallEndedEvent→
+                // LeaveCallSpaceAction→EndCallAction→endAllCalls()の連鎖を防ぐ
+                if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
+                    appDelegate.onEnd(call, action, isAppInitiated: true)
+                } else {
+                    action.fulfill()
+                }
             } else {
-                action.fulfill()
+                // 通常の通話終了（ユーザーが手動で終了）
+                sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
+                if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
+                    appDelegate.onEnd(call, action, isAppInitiated: false)
+                } else {
+                    action.fulfill()
+                }
             }
 
             // action.fulfill()の後に remoteEnded として報告
