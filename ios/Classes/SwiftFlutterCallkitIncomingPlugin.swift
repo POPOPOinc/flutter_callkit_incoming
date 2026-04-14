@@ -742,6 +742,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 } else {
                     action.fulfill()
                 }
+                
+                // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
+                // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
+                // CallKit UIが1件目の名前を表示し続ける問題を修正
+                if let activeCall = self.answerCall {
+                    let update = CXCallUpdate()
+                    update.localizedCallerName = activeCall.data.nameCaller
+                    update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
+                    update.hasVideo = activeCall.data.type > 0
+                    provider.reportCall(with: activeCall.uuid, updated: update)
+                }
             } else {
                 // 通常の通話終了（ユーザーが手動で終了）
                 sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
