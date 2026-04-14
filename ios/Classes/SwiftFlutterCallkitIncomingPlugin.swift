@@ -646,7 +646,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
 
         if !isThisCallAnswered && !isThisCallOutgoing {
             // 未応答のコール（ユーザーが拒否または別のコールが応答済み） - 不在着信として記録
-            sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, self.data?.toJSON())
+            // call.dataを使用（self.dataは最後に報告されたコールのデータを指すため、
+            // 別のコールが存在する場合に誤ったデータが送信される問題を防ぐ）
+            sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onDecline(call, action)
             } else {

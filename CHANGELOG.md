@@ -1,3 +1,7 @@
+## 3.0.10
+* iOS: 同時着信時に後発コールをiOS着信履歴に不在着信として記録する `reportMissedCall` メソッドを追加。`sharedProvider` 経由で `reportNewIncomingCall` を呼び出した後、0.5秒後に `CXCallController` 経由で `CXEndCallAction` を送信して不在着信として終了する。`reportCall(.unanswered)` ではなく `CXEndCallAction` → `action.fulfill()` の正規パスを使用することで、既存コールの着信履歴を破壊しない。
+* iOS: `CXEndCallAction` のDECLINEイベントで `self.data`（最後に報告されたコールのデータ）ではなく `call.data`（実際に終了されたコールのデータ）を使用するように修正。複数コール存在時に誤ったコールのデータがFlutter側に送信され、応答済みのコールが誤ってdecline処理される問題を修正。
+
 ## 3.0.9
 * iOS: `CXProvider` の `configuration` を `initCallkitProvider` 呼び出し毎に更新するように変更。従来は初回作成時のみ設定していたため、着信音（`ringtoneSound`）が最初のコールの設定にキャッシュされ、以降のコールで異なる着信音を指定しても反映されない問題を修正。
 
