@@ -40,6 +40,12 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var isFromPushKit: Bool = false
     private var silenceEvents: Bool = false
     private let devicePushTokenVoIP = "DevicePushTokenVoIP"
+    
+    private var pendingMissedCallUUIDs: [UUID] = []
+    
+    /// アプリが意図的に終了したコールのUUID（CXCallController経由）
+    /// このセットに含まれるコールはonDeclineではなくonEndとして処理する
+    private var appInitiatedEndCallUUIDs: Set<UUID> = []
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -401,6 +407,64 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.callManager.endCallAlls()
     }
     
+    /// アプリが意図的にコールを終了する前に呼び出す（CXCallController経由での終了前）
+    /// このメソッドで登録されたUUIDは、CXEndCallAction時にonDeclineではなくonEndとして処理される
+    /// 用途: 2件目のコール受諾時に1件目を終了する場合など
+    @objc public func markAsAppInitiatedEnd(_ uuid: UUID) {
+        self.appInitiatedEndCallUUIDs.insert(uuid)
+    }
+    
+    /// 不在着信をCallKitに報告し、iOS着信履歴に記録する。
+    /// sharedProvider経由でreportNewIncomingCallを呼び出した後、
+    /// 0.5秒後にCXCallController経由でCXEndCallActionを送信して不在着信として終了する。
+    /// reportCall(.unanswered)ではなくCXEndCallAction→action.fulfill()の正規パスを使用することで、
+    /// 既存コールの着信履歴を破壊しない。
+    @objc public func reportMissedCall(_ data: Data, completion: @escaping () -> Void) {
+        guard let provider = self.sharedProvider else {
+            completion()
+            return
+        }
+        
+        let uuid = UUID(uuidString: data.uuid)!
+        
+        var handle: CXHandle?
+        handle = CXHandle(type: self.getHandleType(data.handleType), value: data.getEncryptHandle())
+        
+        let callUpdate = CXCallUpdate()
+        callUpdate.remoteHandle = handle
+        callUpdate.supportsDTMF = data.supportsDTMF
+        callUpdate.supportsHolding = data.supportsHolding
+        callUpdate.supportsGrouping = data.supportsGrouping
+        callUpdate.supportsUngrouping = data.supportsUngrouping
+        callUpdate.hasVideo = data.type > 0
+        callUpdate.localizedCallerName = data.nameCaller
+        
+        provider.reportNewIncomingCall(with: uuid, update: callUpdate) { error in
+            if error == nil {
+                self.pendingMissedCallUUIDs.append(uuid)
+                
+                // 0.5秒後にCXCallController経由で即時終了（1件目がまだアクティブ中に終了させる）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self = self else { return }
+                    if self.pendingMissedCallUUIDs.contains(uuid) {
+                        self.endPendingMissedCalls()
+                    }
+                }
+            }
+            completion()
+        }
+    }
+    
+    private func endPendingMissedCalls() {
+        guard !self.pendingMissedCallUUIDs.isEmpty else { return }
+        let controller = CXCallController()
+        for uuid in self.pendingMissedCallUUIDs {
+            let endCallAction = CXEndCallAction(call: uuid)
+            let transaction = CXTransaction(action: endCallAction)
+            controller.request(transaction) { _ in }
+        }
+    }
+    
     public func saveEndCall(_ uuid: String, _ reason: Int) {
         switch reason {
         case 1:
@@ -643,8 +707,14 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         // このコールが実際に応答済みかどうかをUUIDで確認
         let isThisCallAnswered = (self.answerCall?.uuid == action.callUUID)
         let isThisCallOutgoing = (self.outgoingCall?.uuid == action.callUUID)
+        
+        // アプリが意図的に終了したコール（例: 2件目受諾時に1件目を終了）かどうかを確認
+        let isAppInitiatedEnd = self.appInitiatedEndCallUUIDs.contains(action.callUUID)
+        if isAppInitiatedEnd {
+            self.appInitiatedEndCallUUIDs.remove(action.callUUID)
+        }
 
-        if !isThisCallAnswered && !isThisCallOutgoing {
+        if !isThisCallAnswered && !isThisCallOutgoing && !isAppInitiatedEnd {
             // 未応答のコール（ユーザーが拒否または別のコールが応答済み） - 不在着信として記録
             // call.dataを使用（self.dataは最後に報告されたコールのデータを指すため、
             // 別のコールが存在する場合に誤ったデータが送信される問題を防ぐ）
@@ -655,7 +725,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 action.fulfill()
             }
         } else {
-            // 応答済みまたは発信中のコール - 通常の通話終了として記録
+            // 応答済み、発信中、またはアプリが意図的に終了したコール - 通常の通話終了として記録
             if isThisCallAnswered {
                 self.answerCall = nil
             }
