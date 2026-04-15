@@ -46,6 +46,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     /// アプリが意図的に終了したコールのUUID（CXCallController経由）
     /// このセットに含まれるコールはonDeclineではなくonEndとして処理する
     private var appInitiatedEndCallUUIDs: Set<UUID> = []
+    
+    /// 通話遷移中フラグ（2件目受諾→1件目終了の間）
+    /// CXSetHeldCallAction/CXSetMutedCallAction のhold/muteイベント送信を抑制するために使用
+    private var isTransitioningCalls: Bool = false
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -668,6 +672,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         call.hasConnectDidChange = { [weak self] in
             self?.sharedProvider?.reportOutgoingCall(with: call.uuid, connectedAt: call.connectedData)
         }
+        // 既にアクティブなコールがある場合（2件目の受諾）、通話遷移フラグを立てる
+        // iOS が1件目に CXSetHeldCallAction(isOnHold:true) を自動発行し、
+        // Flutter側で hold→mute=true の連鎖が起きるのを防ぐ
+        if self.answerCall != nil {
+            self.isTransitioningCalls = true
+        }
+        
         self.data?.isAccepted = true
         self.answerCall = call
         
@@ -764,9 +775,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 }
             }
 
-            // action.fulfill()の後に remoteEnded として報告
-            // （CallKitの仕様上、NSUserActivityの作成は防げないが、試行として残す）
-            provider.reportCall(with: action.callUUID, endedAt: Date(), reason: .remoteEnded)
+            // 通話遷移フラグをリセット
+            if isAppInitiatedEnd {
+                self.isTransitioningCalls = false
+            }
             
             // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
             // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
@@ -793,6 +805,18 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             action.fail()
             return
         }
+        
+        // 通話遷移中（2件目受諾→1件目終了の間）はhold/muteイベントを抑制
+        // iOS が1件目を自動保留にする際のCXSetHeldCallAction(isOnHold:true)が
+        // Flutter側でSetCallHoldStateAction→SetMuteAction(true)の連鎖を起こし、
+        // 2件目のコールのミュート状態が不正にtrueになる問題を防ぐ
+        if self.isTransitioningCalls {
+            call.isOnHold = action.isOnHold
+            self.callManager.setHold(call: call, onHold: action.isOnHold)
+            action.fulfill()
+            return
+        }
+        
         call.isOnHold = action.isOnHold
         call.isMuted = action.isOnHold
         self.callManager.setHold(call: call, onHold: action.isOnHold)
@@ -805,6 +829,14 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             action.fail()
             return
         }
+        
+        // 通話遷移中はmuteイベントを抑制（CXSetHeldCallActionと同様の理由）
+        if self.isTransitioningCalls {
+            call.isMuted = action.isMuted
+            action.fulfill()
+            return
+        }
+        
         call.isMuted = action.isMuted
         sendMuteEvent(action.callUUID.uuidString, action.isMuted)
         action.fulfill()
