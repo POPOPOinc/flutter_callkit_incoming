@@ -670,6 +670,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         self.data?.isAccepted = true
         self.answerCall = call
+        
+        // 2件目のコール受諾時、CallKit UIに最新のCXCallUpdateを適用する
+        // maximumCallGroups=2で2件のコールが存在する場合、1件目終了後に
+        // CallKit UIが1件目の名前を表示し続ける問題の対策として、
+        // 受諾時点で2件目のCXCallUpdateを明示的に再適用する
+        let update = CXCallUpdate()
+        update.localizedCallerName = call.data.nameCaller
+        update.remoteHandle = CXHandle(type: self.getHandleType(call.data.handleType), value: call.data.getEncryptHandle())
+        update.hasVideo = call.data.type > 0
+        self.sharedProvider?.reportCall(with: call.uuid, updated: update)
+        
         sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ACCEPT, self.data?.toJSON())
         if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
             appDelegate.onAccept(call, action)
@@ -760,16 +771,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
             // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
             // CallKit UIが1件目の名前を表示し続ける問題を修正
-            // reportCall(with:endedAt:reason:.remoteEnded)の後に遅延実行することで、
-            // CallKitが1件目の終了処理を完了してからUIを更新する
+            // 複数の遅延で適用を試行する（ロック画面のCallKit UIの更新タイミングが不定のため）
             if isAppInitiatedEnd, let activeCall = self.answerCall {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    guard let self = self else { return }
-                    let update = CXCallUpdate()
-                    update.localizedCallerName = activeCall.data.nameCaller
-                    update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
-                    update.hasVideo = activeCall.data.type > 0
-                    self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
+                for delay in [0.5, 1.5, 3.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        guard let self = self else { return }
+                        let update = CXCallUpdate()
+                        update.localizedCallerName = activeCall.data.nameCaller
+                        update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
+                        update.hasVideo = activeCall.data.type > 0
+                        self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
+                    }
                 }
             }
         }
