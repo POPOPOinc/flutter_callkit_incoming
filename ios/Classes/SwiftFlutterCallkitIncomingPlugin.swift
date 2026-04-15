@@ -267,9 +267,11 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     @objc public func showCallkitIncoming(_ data: Data, fromPushKit: Bool) {
+        print("[CallKit-DEBUG] showCallkitIncoming: uuid=\(data.uuid), name=\(data.nameCaller), fromPushKit=\(fromPushKit), existing self.data?.uuid=\(self.data?.uuid ?? "nil"), self.data?.name=\(self.data?.nameCaller ?? "nil")")
         self.isFromPushKit = fromPushKit
         if(fromPushKit){
             self.data = data
+            print("[CallKit-DEBUG] showCallkitIncoming: self.data UPDATED to uuid=\(data.uuid), name=\(data.nameCaller)")
         }
         
         if(data.isShowMissedCallNotification){
@@ -307,9 +309,11 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     @objc public func showCallkitIncoming(_ data: Data, fromPushKit: Bool, completion: @escaping () -> Void) {
+        print("[CallKit-DEBUG] showCallkitIncoming(completion): uuid=\(data.uuid), name=\(data.nameCaller), fromPushKit=\(fromPushKit), existing self.data?.uuid=\(self.data?.uuid ?? "nil"), self.data?.name=\(self.data?.nameCaller ?? "nil")")
         self.isFromPushKit = fromPushKit
         if(fromPushKit){
             self.data = data
+            print("[CallKit-DEBUG] showCallkitIncoming(completion): self.data UPDATED to uuid=\(data.uuid), name=\(data.nameCaller)")
         }
         
         if(data.isShowMissedCallNotification){
@@ -677,10 +681,14 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         // Flutter側で hold→mute=true の連鎖が起きるのを防ぐ
         if self.answerCall != nil {
             self.isTransitioningCalls = true
+            print("[CallKit-DEBUG] CXAnswerCallAction: isTransitioningCalls set to TRUE (existing answerCall: \(self.answerCall!.uuid))")
+        } else {
+            print("[CallKit-DEBUG] CXAnswerCallAction: No existing answerCall, isTransitioningCalls remains \(self.isTransitioningCalls)")
         }
         
         self.data?.isAccepted = true
         self.answerCall = call
+        print("[CallKit-DEBUG] CXAnswerCallAction: answerCall set to uuid=\(call.uuid), name=\(call.data.nameCaller), self.data?.uuid=\(self.data?.uuid ?? "nil"), self.data?.name=\(self.data?.nameCaller ?? "nil")")
         
         // 2件目のコール受諾時、CallKit UIに最新のCXCallUpdateを適用する
         // maximumCallGroups=2で2件のコールが存在する場合、1件目終了後に
@@ -691,7 +699,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         update.remoteHandle = CXHandle(type: self.getHandleType(call.data.handleType), value: call.data.getEncryptHandle())
         update.hasVideo = call.data.type > 0
         self.sharedProvider?.reportCall(with: call.uuid, updated: update)
+        print("[CallKit-DEBUG] CXAnswerCallAction: reportCall(updated) for uuid=\(call.uuid), name=\(call.data.nameCaller)")
         
+        print("[CallKit-DEBUG] CXAnswerCallAction: sending ACTION_CALL_ACCEPT with self.data?.uuid=\(self.data?.uuid ?? "nil"), self.data?.name=\(self.data?.nameCaller ?? "nil"), call.uuid=\(call.uuid), call.data.name=\(call.data.nameCaller)")
         sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ACCEPT, self.data?.toJSON())
         if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
             appDelegate.onAccept(call, action)
@@ -714,6 +724,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     
     
     public func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        print("[CallKit-DEBUG] CXEndCallAction: BEGIN uuid=\(action.callUUID), answerCall?.uuid=\(self.answerCall?.uuid.uuidString ?? "nil"), outgoingCall?.uuid=\(self.outgoingCall?.uuid.uuidString ?? "nil"), self.data?.uuid=\(self.data?.uuid ?? "nil"), self.data?.name=\(self.data?.nameCaller ?? "nil")")
         guard let call = self.callManager.callWithUUID(uuid: action.callUUID) else {
             if(self.answerCall == nil && self.outgoingCall == nil){
                 sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TIMEOUT, self.data?.toJSON())
@@ -736,10 +747,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             self.appInitiatedEndCallUUIDs.remove(action.callUUID)
         }
 
+        print("[CallKit-DEBUG] CXEndCallAction: routing decision - isThisCallAnswered=\(isThisCallAnswered), isThisCallOutgoing=\(isThisCallOutgoing), isAppInitiatedEnd=\(isAppInitiatedEnd), call.data.name=\(call.data.nameCaller)")
+
         if !isThisCallAnswered && !isThisCallOutgoing && !isAppInitiatedEnd {
             // 未応答のコール（ユーザーが拒否または別のコールが応答済み） - 不在着信として記録
             // call.dataを使用（self.dataは最後に報告されたコールのデータを指すため、
             // 別のコールが存在する場合に誤ったデータが送信される問題を防ぐ）
+            print("[CallKit-DEBUG] CXEndCallAction: DECLINE path - sending call.data.name=\(call.data.nameCaller)")
             sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE, call.data.toJSON())
             if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                 appDelegate.onDecline(call, action)
@@ -759,6 +773,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 // アプリ起因の終了（例: 2件目受諾時に1件目を終了）
                 // ACTION_CALL_ENDEDイベントをスキップして、Flutter側の_handleCallEndedEvent→
                 // LeaveCallSpaceAction→EndCallAction→endAllCalls()の連鎖を防ぐ
+                print("[CallKit-DEBUG] CXEndCallAction: APP-INITIATED END path - skipping ACTION_CALL_ENDED event")
                 if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                     appDelegate.onEnd(call, action, isAppInitiated: true)
                 } else {
@@ -767,6 +782,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 
             } else {
                 // 通常の通話終了（ユーザーが手動で終了）
+                print("[CallKit-DEBUG] CXEndCallAction: NORMAL END path - sending ACTION_CALL_ENDED with call.data.name=\(call.data.nameCaller)")
                 sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED, call.data.toJSON())
                 if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
                     appDelegate.onEnd(call, action, isAppInitiated: false)
@@ -777,6 +793,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
 
             // 通話遷移フラグをリセット
             if isAppInitiatedEnd {
+                print("[CallKit-DEBUG] CXEndCallAction: isTransitioningCalls reset to FALSE (isAppInitiatedEnd)")
                 self.isTransitioningCalls = false
             }
             
@@ -785,6 +802,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             // CallKit UIが1件目の名前を表示し続ける問題を修正
             // 複数の遅延で適用を試行する（ロック画面のCallKit UIの更新タイミングが不定のため）
             if isAppInitiatedEnd, let activeCall = self.answerCall {
+                print("[CallKit-DEBUG] CXEndCallAction: Scheduling CXCallUpdate re-apply for activeCall uuid=\(activeCall.uuid), name=\(activeCall.data.nameCaller)")
                 for delay in [0.5, 1.5, 3.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         guard let self = self else { return }
@@ -793,6 +811,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                         update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
                         update.hasVideo = activeCall.data.type > 0
                         self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
+                        print("[CallKit-DEBUG] CXEndCallAction: reportCall(updated) at delay=\(delay)s for uuid=\(activeCall.uuid), name=\(activeCall.data.nameCaller)")
                     }
                 }
             }
@@ -806,17 +825,21 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         
+        print("[CallKit-DEBUG] CXSetHeldCallAction: uuid=\(action.callUUID), isOnHold=\(action.isOnHold), isTransitioningCalls=\(self.isTransitioningCalls)")
+        
         // 通話遷移中（2件目受諾→1件目終了の間）はhold/muteイベントを抑制
         // iOS が1件目を自動保留にする際のCXSetHeldCallAction(isOnHold:true)が
         // Flutter側でSetCallHoldStateAction→SetMuteAction(true)の連鎖を起こし、
         // 2件目のコールのミュート状態が不正にtrueになる問題を防ぐ
         if self.isTransitioningCalls {
+            print("[CallKit-DEBUG] CXSetHeldCallAction: SUPPRESSED (isTransitioningCalls=true), not sending hold event")
             call.isOnHold = action.isOnHold
             self.callManager.setHold(call: call, onHold: action.isOnHold)
             action.fulfill()
             return
         }
         
+        print("[CallKit-DEBUG] CXSetHeldCallAction: SENDING hold event (isOnHold=\(action.isOnHold))")
         call.isOnHold = action.isOnHold
         call.isMuted = action.isOnHold
         self.callManager.setHold(call: call, onHold: action.isOnHold)
@@ -830,13 +853,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         
+        print("[CallKit-DEBUG] CXSetMutedCallAction: uuid=\(action.callUUID), isMuted=\(action.isMuted), isTransitioningCalls=\(self.isTransitioningCalls)")
+        
         // 通話遷移中はmuteイベントを抑制（CXSetHeldCallActionと同様の理由）
         if self.isTransitioningCalls {
+            print("[CallKit-DEBUG] CXSetMutedCallAction: SUPPRESSED (isTransitioningCalls=true), not sending mute event")
             call.isMuted = action.isMuted
             action.fulfill()
             return
         }
         
+        print("[CallKit-DEBUG] CXSetMutedCallAction: SENDING mute event (isMuted=\(action.isMuted))")
         call.isMuted = action.isMuted
         sendMuteEvent(action.callUUID.uuidString, action.isMuted)
         action.fulfill()
