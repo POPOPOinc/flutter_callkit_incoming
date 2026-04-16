@@ -24,4 +24,8 @@ public protocol CallkitIncomingAppDelegate : NSObjectProtocol {
     
     func didDeactivateAudioSession(_ audioSession: AVAudioSession)
     
+    /// CallKit UIの表示名を更新するためにコールのUUIDが変更された際に呼ばれる
+    /// popopo_client側でcallStateのUUIDマッピングを更新するために使用
+    func onCallUUIDChanged(_ oldUUID: String, _ newUUID: String)
+    
 }

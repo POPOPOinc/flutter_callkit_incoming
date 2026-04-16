@@ -53,8 +53,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var isTransitioningCalls: Bool = false
     
     /// CallKit UIリフレッシュ中フラグ
-    /// hold→unholdを送信してCallKit UIの表示名を更新する際に、
-    /// hold/muteイベントがFlutter側に伝播するのを抑制するために使用
+    /// コールを新しいUUIDで再報告してCallKit UIの表示名を更新する際に、
+    /// CXAnswerCallAction/hold/muteイベントがFlutter側に伝播するのを抑制するために使用
     private var isRefreshingCallUI: Bool = false
 
     
@@ -693,6 +693,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         call.hasConnectDidChange = { [weak self] in
             self?.sharedProvider?.reportOutgoingCall(with: call.uuid, connectedAt: call.connectedData)
         }
+        // CallKit UIリフレッシュ中のauto-answerは内部処理のため、
+        // イベント送信とonAcceptコールバックをスキップする
+        if self.isRefreshingCallUI {
+            self.debugLog("[CallKit-DEBUG] CXAnswerCallAction: SUPPRESSED (isRefreshingCallUI=true) uuid=\(action.callUUID.uuidString)")
+            self.configureAudioSession()
+            self.answerCall = call
+            self.isRefreshingCallUI = false
+            action.fulfill()
+            return
+        }
+        
         // 既にアクティブなコールがある場合（2件目の受諾）、通話遷移フラグを立てる
         // iOS が1件目に CXSetHeldCallAction(isOnHold:true) を自動発行し、
         // Flutter側で hold→mute=true の連鎖が起きるのを防ぐ
@@ -708,10 +719,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.debugLog("[CallKit-DEBUG] CXAnswerCallAction: answerCall set to uuid=\(call.uuid.uuidString), name=\(call.data.nameCaller), self.data?.uuid=\(self.data?.uuid ?? "nil"), self.data?.name=\(self.data?.nameCaller ?? "nil")")
         
         // 2件目のコール受諾時、CallKit UIに最新のCXCallUpdateを適用する
-        // maximumCallGroups=2で2件のコールが存在する場合、1件目終了後に
-        // CallKit UIが1件目の名前を表示し続ける問題の対策として、
-        // 受諾時点で2件目のCXCallUpdateを明示的に再適用する
-        // 全属性を設定することで、iOSが部分的な更新を無視する問題を回避する
         let update = self.buildFullCallUpdate(from: call.data)
         self.sharedProvider?.reportCall(with: call.uuid, updated: update)
         self.debugLog("[CallKit-DEBUG] CXAnswerCallAction: reportCall(updated) for uuid=\(call.uuid.uuidString), name=\(call.data.nameCaller)")
@@ -812,60 +819,16 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 self.isTransitioningCalls = false
             }
             
-            // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
+            // アプリ起因の終了後、残りのアクティブなコールのCallKit UIを更新する
             // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
             // CallKit UIが1件目の名前を表示し続ける問題を修正
             //
-            // 2段階のアプローチ:
-            // 1. reportCall(with:updated:) で全属性を含むCXCallUpdateを再適用（複数遅延）
-            // 2. CXCallController経由でhold→unholdを送信してCallKit UIの再描画をトリガー
+            // reportCall(with:updated:)やhold→unholdでは更新できないため、
+            // コールを一旦終了して新しいUUIDで再報告し、即座にauto-answerする
             if isAppInitiatedEnd, let activeCall = self.answerCall {
-                self.debugLog("[CallKit-DEBUG] CXEndCallAction: Scheduling CXCallUpdate re-apply for activeCall uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
-                for delay in [0.5, 1.5, 3.0] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                        guard let self = self else { return }
-                        let update = self.buildFullCallUpdate(from: activeCall.data)
-                        self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
-                        self.debugLog("[CallKit-DEBUG] CXEndCallAction: reportCall(updated) at delay=\(delay)s for uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
-                    }
-                }
-                
-                // CXCallController経由でhold→unholdを送信してCallKit UIの再描画をトリガーする
-                // reportCall(with:updated:)だけではロック画面のCallKit UIが更新されないため、
-                // hold→unholdアクションを送信することでUIの再描画を強制する
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    guard let self = self else { return }
-                    self.isRefreshingCallUI = true
-                    self.debugLog("[CallKit-DEBUG] CXEndCallAction: Sending hold(true) to refresh CallKit UI for uuid=\(activeCall.uuid.uuidString)")
-                    let controller = CXCallController()
-                    let holdAction = CXSetHeldCallAction(call: activeCall.uuid, onHold: true)
-                    let holdTransaction = CXTransaction(action: holdAction)
-                    controller.request(holdTransaction) { [weak self] error in
-                        guard let self = self else { return }
-                        if let error = error {
-                            self.debugLog("[CallKit-DEBUG] CXEndCallAction: hold(true) failed: \(error.localizedDescription)")
-                            self.isRefreshingCallUI = false
-                            return
-                        }
-                        // hold成功後、即座にunholdを送信
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                            guard let self = self else { return }
-                            self.debugLog("[CallKit-DEBUG] CXEndCallAction: Sending hold(false) to complete UI refresh for uuid=\(activeCall.uuid.uuidString)")
-                            let unholdAction = CXSetHeldCallAction(call: activeCall.uuid, onHold: false)
-                            let unholdTransaction = CXTransaction(action: unholdAction)
-                            controller.request(unholdTransaction) { [weak self] error in
-                                guard let self = self else { return }
-                                self.isRefreshingCallUI = false
-                                if let error = error {
-                                    self.debugLog("[CallKit-DEBUG] CXEndCallAction: hold(false) failed: \(error.localizedDescription)")
-                                }
-                                // unhold完了後にCXCallUpdateも再適用
-                                let update = self.buildFullCallUpdate(from: activeCall.data)
-                                self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
-                                self.debugLog("[CallKit-DEBUG] CXEndCallAction: reportCall(updated) after hold/unhold for uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
-                            }
-                        }
-                    }
+                self.debugLog("[CallKit-DEBUG] CXEndCallAction: Scheduling refreshActiveCallUI for activeCall uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.refreshActiveCallUI(activeCall)
                 }
             }
         }
@@ -982,6 +945,12 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
     
     public func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        // CallKit UIリフレッシュ中のdidActivateAudioSessionは内部処理のため、
+        // appDelegateへの通知とオーディオセッション再設定をスキップする
+        if self.isRefreshingCallUI {
+            self.debugLog("[CallKit-DEBUG] didActivateAudioSession: SUPPRESSED (isRefreshingCallUI=true)")
+            return
+        }
 
         if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
             appDelegate.didActivateAudioSession(audioSession)
@@ -1024,6 +993,74 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         
         self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActivate": false ])
+    }
+    
+    /// CallKit UIの表示名を更新するため、アクティブなコールを新しいUUIDで再報告する
+    /// reportCall(with:updated:)やhold→unholdではロック画面のCallKit UIの表示名が更新できないため、
+    /// コールを一旦終了して新しいUUIDで再報告し、即座にauto-answerする
+    private func refreshActiveCallUI(_ activeCall: Call) {
+        guard let provider = self.sharedProvider else {
+            self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: sharedProvider is nil, aborting")
+            return
+        }
+        
+        let oldUUID = activeCall.uuid
+        let newUUID = UUID()
+        let oldUUIDString = oldUUID.uuidString
+        let newUUIDString = newUUID.uuidString
+        
+        self.isRefreshingCallUI = true
+        self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: START - oldUUID=\(oldUUIDString), newUUID=\(newUUIDString), name=\(activeCall.data.nameCaller)")
+        
+        // 1. popopo_client側のcallStateのUUIDマッピングを更新
+        if let appDelegate = UIApplication.shared.delegate as? CallkitIncomingAppDelegate {
+            appDelegate.onCallUUIDChanged(oldUUIDString, newUUIDString)
+        }
+        
+        // 2. Data.uuidを新しいUUIDに更新（参照型なのでcallState側も自動で更新される）
+        activeCall.data.uuid = newUUIDString
+        
+        // 3. 古いCXCallをCallKitから終了（CXEndCallActionハンドラはトリガーされない）
+        provider.reportCall(with: oldUUID, endedAt: Date(), reason: .remoteEnded)
+        self.callManager.removeCall(activeCall)
+        self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: Old CXCall ended")
+        
+        // 4. 新しいCXCallUpdateを構築
+        let callUpdate = self.buildFullCallUpdate(from: activeCall.data)
+        
+        // 5. 新しいUUIDで着信コールを報告
+        provider.reportNewIncomingCall(with: newUUID, update: callUpdate) { [weak self] error in
+            guard let self = self else { return }
+            if let error = error {
+                self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: reportNewIncomingCall FAILED: \(error.localizedDescription)")
+                self.isRefreshingCallUI = false
+                return
+            }
+            
+            self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: New call reported, auto-answering")
+            
+            // 6. 新しいCallオブジェクトを作成してcallManagerに追加
+            let newCall = Call(uuid: newUUID, data: activeCall.data)
+            newCall.handle = activeCall.handle
+            newCall.hasConnected = true
+            self.callManager.addCall(newCall)
+            self.answerCall = newCall
+            
+            // 7. 新しいコールを即座にauto-answer（CXAnswerCallActionハンドラで抑制される）
+            let controller = CXCallController()
+            let answerAction = CXAnswerCallAction(call: newUUID)
+            let transaction = CXTransaction(action: answerAction)
+            controller.request(transaction) { [weak self] error in
+                guard let self = self else { return }
+                if let error = error {
+                    self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: auto-answer FAILED: \(error.localizedDescription)")
+                    self.isRefreshingCallUI = false
+                } else {
+                    self.debugLog("[CallKit-DEBUG] refreshActiveCallUI: auto-answer SUCCEEDED")
+                    // isRefreshingCallUIはCXAnswerCallActionハンドラ内でリセットされる
+                }
+            }
+        }
     }
     
     /// CXCallUpdateをcall.dataの全属性から構築するヘルパー
