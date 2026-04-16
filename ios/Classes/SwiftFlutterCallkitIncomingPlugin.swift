@@ -706,10 +706,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         // maximumCallGroups=2で2件のコールが存在する場合、1件目終了後に
         // CallKit UIが1件目の名前を表示し続ける問題の対策として、
         // 受諾時点で2件目のCXCallUpdateを明示的に再適用する
-        let update = CXCallUpdate()
-        update.localizedCallerName = call.data.nameCaller
-        update.remoteHandle = CXHandle(type: self.getHandleType(call.data.handleType), value: call.data.getEncryptHandle())
-        update.hasVideo = call.data.type > 0
+        // 全属性を設定することで、iOSが部分的な更新を無視する問題を回避する
+        let update = self.buildFullCallUpdate(from: call.data)
         self.sharedProvider?.reportCall(with: call.uuid, updated: update)
         self.debugLog("[CallKit-DEBUG] CXAnswerCallAction: reportCall(updated) for uuid=\(call.uuid.uuidString), name=\(call.data.nameCaller)")
         
@@ -818,10 +816,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 for delay in [0.5, 1.5, 3.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         guard let self = self else { return }
-                        let update = CXCallUpdate()
-                        update.localizedCallerName = activeCall.data.nameCaller
-                        update.remoteHandle = CXHandle(type: self.getHandleType(activeCall.data.handleType), value: activeCall.data.getEncryptHandle())
-                        update.hasVideo = activeCall.data.type > 0
+                        let update = self.buildFullCallUpdate(from: activeCall.data)
                         self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
                         self.debugLog("[CallKit-DEBUG] CXEndCallAction: reportCall(updated) at delay=\(delay)s for uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
                     }
@@ -966,6 +961,21 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         
         self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActivate": false ])
+    }
+    
+    /// CXCallUpdateをcall.dataの全属性から構築するヘルパー
+    /// reportCall(with:updated:)で部分的な属性のみ設定すると、iOSが更新を無視する可能性があるため、
+    /// showCallkitIncomingで報告した初期CXCallUpdateと同じ全属性を設定する
+    private func buildFullCallUpdate(from data: Data) -> CXCallUpdate {
+        let update = CXCallUpdate()
+        update.localizedCallerName = data.nameCaller
+        update.remoteHandle = CXHandle(type: self.getHandleType(data.handleType), value: data.getEncryptHandle())
+        update.hasVideo = data.type > 0
+        update.supportsDTMF = data.supportsDTMF
+        update.supportsHolding = data.supportsHolding
+        update.supportsGrouping = data.supportsGrouping
+        update.supportsUngrouping = data.supportsUngrouping
+        return update
     }
     
     private func sendMuteEvent(_ id: String, _ isMuted: Bool) {
