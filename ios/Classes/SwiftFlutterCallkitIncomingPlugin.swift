@@ -51,6 +51,11 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     /// 通話遷移中フラグ（2件目受諾→1件目終了の間）
     /// CXSetHeldCallAction/CXSetMutedCallAction のhold/muteイベント送信を抑制するために使用
     private var isTransitioningCalls: Bool = false
+    
+    /// CallKit UIリフレッシュ中フラグ
+    /// hold→unholdを送信してCallKit UIの表示名を更新する際に、
+    /// hold/muteイベントがFlutter側に伝播するのを抑制するために使用
+    private var isRefreshingCallUI: Bool = false
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -810,7 +815,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             // アプリ起因の終了後、残りのアクティブなコールのCXCallUpdateを再適用する
             // maximumCallGroups=2で2件のコールが存在する場合、1件目を終了した後に
             // CallKit UIが1件目の名前を表示し続ける問題を修正
-            // 複数の遅延で適用を試行する（ロック画面のCallKit UIの更新タイミングが不定のため）
+            //
+            // 2段階のアプローチ:
+            // 1. reportCall(with:updated:) で全属性を含むCXCallUpdateを再適用（複数遅延）
+            // 2. CXCallController経由でhold→unholdを送信してCallKit UIの再描画をトリガー
             if isAppInitiatedEnd, let activeCall = self.answerCall {
                 self.debugLog("[CallKit-DEBUG] CXEndCallAction: Scheduling CXCallUpdate re-apply for activeCall uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
                 for delay in [0.5, 1.5, 3.0] {
@@ -819,6 +827,44 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                         let update = self.buildFullCallUpdate(from: activeCall.data)
                         self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
                         self.debugLog("[CallKit-DEBUG] CXEndCallAction: reportCall(updated) at delay=\(delay)s for uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
+                    }
+                }
+                
+                // CXCallController経由でhold→unholdを送信してCallKit UIの再描画をトリガーする
+                // reportCall(with:updated:)だけではロック画面のCallKit UIが更新されないため、
+                // hold→unholdアクションを送信することでUIの再描画を強制する
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    guard let self = self else { return }
+                    self.isRefreshingCallUI = true
+                    self.debugLog("[CallKit-DEBUG] CXEndCallAction: Sending hold(true) to refresh CallKit UI for uuid=\(activeCall.uuid.uuidString)")
+                    let controller = CXCallController()
+                    let holdAction = CXSetHeldCallAction(call: activeCall.uuid, onHold: true)
+                    let holdTransaction = CXTransaction(action: holdAction)
+                    controller.request(holdTransaction) { [weak self] error in
+                        guard let self = self else { return }
+                        if let error = error {
+                            self.debugLog("[CallKit-DEBUG] CXEndCallAction: hold(true) failed: \(error.localizedDescription)")
+                            self.isRefreshingCallUI = false
+                            return
+                        }
+                        // hold成功後、即座にunholdを送信
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                            guard let self = self else { return }
+                            self.debugLog("[CallKit-DEBUG] CXEndCallAction: Sending hold(false) to complete UI refresh for uuid=\(activeCall.uuid.uuidString)")
+                            let unholdAction = CXSetHeldCallAction(call: activeCall.uuid, onHold: false)
+                            let unholdTransaction = CXTransaction(action: unholdAction)
+                            controller.request(unholdTransaction) { [weak self] error in
+                                guard let self = self else { return }
+                                self.isRefreshingCallUI = false
+                                if let error = error {
+                                    self.debugLog("[CallKit-DEBUG] CXEndCallAction: hold(false) failed: \(error.localizedDescription)")
+                                }
+                                // unhold完了後にCXCallUpdateも再適用
+                                let update = self.buildFullCallUpdate(from: activeCall.data)
+                                self.sharedProvider?.reportCall(with: activeCall.uuid, updated: update)
+                                self.debugLog("[CallKit-DEBUG] CXEndCallAction: reportCall(updated) after hold/unhold for uuid=\(activeCall.uuid.uuidString), name=\(activeCall.data.nameCaller)")
+                            }
+                        }
                     }
                 }
             }
@@ -853,6 +899,15 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         
+        // CallKit UIリフレッシュ中のhold/unholdは内部処理のため、Flutter側に通知しない
+        if self.isRefreshingCallUI {
+            self.debugLog("[CallKit-DEBUG] CXSetHeldCallAction: SUPPRESSED (isRefreshingCallUI=true, isOnHold=\(action.isOnHold))")
+            call.isOnHold = action.isOnHold
+            self.callManager.setHold(call: call, onHold: action.isOnHold)
+            action.fulfill()
+            return
+        }
+        
         self.debugLog("[CallKit-DEBUG] CXSetHeldCallAction: SENDING hold event (isOnHold=\(action.isOnHold))")
         call.isOnHold = action.isOnHold
         call.isMuted = action.isOnHold
@@ -876,6 +931,14 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         
         if self.isTransitioningCalls || shouldSuppressForMultiCall {
             self.debugLog("[CallKit-DEBUG] CXSetMutedCallAction: SUPPRESSED (isTransitioningCalls=\(self.isTransitioningCalls), shouldSuppressForMultiCall=\(shouldSuppressForMultiCall))")
+            call.isMuted = action.isMuted
+            action.fulfill()
+            return
+        }
+        
+        // CallKit UIリフレッシュ中のmuteは内部処理のため、Flutter側に通知しない
+        if self.isRefreshingCallUI {
+            self.debugLog("[CallKit-DEBUG] CXSetMutedCallAction: SUPPRESSED (isRefreshingCallUI=true, isMuted=\(action.isMuted))")
             call.isMuted = action.isMuted
             action.fulfill()
             return
