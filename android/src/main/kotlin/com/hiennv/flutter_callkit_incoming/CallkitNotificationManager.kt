@@ -46,8 +46,11 @@ class CallkitNotificationManager(
         // Android は 1 パッケージあたり同時に保持できる通知を 50 件に制限している
         // (NotificationManagerService.MAX_PACKAGE_NOTIFICATIONS = 50)。
         // 不在着信通知が溜まり続けるとこの上限に達し、新しい着信/不在着信の通知が
-        // サイレントに破棄されるため、新しい不在着信通知を出す前に古いものを整理する。
-        private const val MAX_ACTIVE_MISSED_NOTIFICATIONS = 49
+        // サイレントに破棄される。
+        // 着信時は incoming チャンネル通知、ongoing チャンネル通知、
+        // foreground service 通知など複数の通知が同時に必要になるため、
+        // missed call 用に十分な空きを残せるよう上限を低めに設定する。
+        private const val MAX_ACTIVE_MISSED_NOTIFICATIONS = 40
 
     }
 
@@ -926,16 +929,17 @@ class CallkitNotificationManager(
      *
      * - 通知チャンネルは Android 8.0 (API 26) 以降で参照可能なため、それ未満では no-op
      * - アクティブ通知の取得は API 23 (M) 以降で利用可能
-     * - 既に同じ [keepNotificationId] が active な場合は、それは上書き対象なのでカウントから除外
+     * - [keepNotificationId] が非 null の場合、同じ ID の active 通知は「上書き対象」として
+     *   カウントから除外する (新規発行する missed call 通知など)
      */
-    private fun cleanupOldMissedNotifications(keepNotificationId: Int) {
+    private fun cleanupOldMissedNotifications(keepNotificationId: Int?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         try {
             val nm = getNotificationManager()
             val activeMissed = nm.activeNotifications
                 .filter {
                     it.notification.channelId == NOTIFICATION_CHANNEL_ID_MISSED &&
-                        it.id != keepNotificationId
+                        (keepNotificationId == null || it.id != keepNotificationId)
                 }
                 .sortedBy { it.postTime }
 
@@ -1075,6 +1079,11 @@ class CallkitNotificationManager(
 
     @SuppressLint("MissingPermission")
     fun showIncomingNotification(data: Bundle) {
+        // 不在着信通知が溜まっていると、新規着信通知が OS の per-package 上限 (50 件) に
+        // ヒットして drop される。着信が鳴っているのに通知トースト / full-screen intent が
+        // 出ない状態を防ぐため、ここでも古い missed call 通知を整理する。
+        cleanupOldMissedNotifications(keepNotificationId = null)
+
         val callkitNotification = getIncomingNotification(data)
         if (incomingChannelEnabled()) {
             callkitSoundPlayerManager?.play(data)
