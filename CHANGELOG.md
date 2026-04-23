@@ -1,3 +1,6 @@
+## 3.0.10
+* Android: 不在着信通知が溜まり続けると、Android OS の「1 パッケージあたり 50 件」の同時通知上限に達して、以降の着信 push / 不在着信通知がサイレントに drop される問題を修正。`showMissCallNotification` 発行前に `callkit_missed_channel_id` のアクティブ通知が 49 件以上溜まっていたら、古い (postTime が小さい) ものから順に `cancel()` して枠を確保するようにした。
+
 ## 3.0.9
 * iOS: `CXProvider` の `configuration` を `initCallkitProvider` 呼び出し毎に更新するように変更。従来は初回作成時のみ設定していたため、着信音（`ringtoneSound`）が最初のコールの設定にキャッシュされ、以降のコールで異なる着信音を指定しても反映されない問題を修正。
 
