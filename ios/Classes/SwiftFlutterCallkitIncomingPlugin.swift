@@ -25,6 +25,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     static let ACTION_CALL_TOGGLE_GROUP = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_GROUP"
     static let ACTION_CALL_TOGGLE_AUDIO_SESSION = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_AUDIO_SESSION"
     static let ACTION_CALL_TOGGLE_SPEAKER = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_SPEAKER"
+    static let ACTION_DEBUG_LOG = "com.hiennv.flutter_callkit_incoming.ACTION_DEBUG_LOG"
     
     @objc public private(set) static var sharedInstance: SwiftFlutterCallkitIncomingPlugin!
     
@@ -60,6 +61,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         streamHandlers.reap().forEach { handler in
             handler?.send(event, body ?? [:])
         }
+    }
+    
+    private func debugLog(_ message: String) {
+        NSLog("%@", message)
+        sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_DEBUG_LOG, [
+            "message": message,
+        ])
     }
     
     public static func sharePluginWithRegister(with registrar: FlutterPluginRegistrar) {
@@ -544,24 +552,64 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
 
     @objc private func handleAudioSessionRouteChange(_ notification: Notification) {
-        guard callManager.calls.contains(where: { !$0.hasEnded }) else { return }
+        let activeCallCount = callManager.calls.filter { !$0.hasEnded }.count
+        debugLog("[CallKit-DEBUG] routeChangeNotification reason=\(routeChangeReasonDescription(notification)) activeCallCount=\(activeCallCount) route=\(audioRouteDescription()) trackedSpeaker=\(String(describing: isSpeakerOn))")
+        guard activeCallCount > 0 else { return }
         updateSpeakerStateFromAudioRoute()
     }
 
     private func updateSpeakerStateFromAudioRoute() {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
         guard outputs.contains(where: { $0.portType == .builtInReceiver || $0.portType == .builtInSpeaker }) else {
+            debugLog("[CallKit-DEBUG] updateSpeakerState skipped route=\(audioRouteDescription())")
             return
         }
 
         let newSpeakerState = outputs.contains { $0.portType == .builtInSpeaker }
+        debugLog("[CallKit-DEBUG] updateSpeakerState new=\(newSpeakerState) previous=\(String(describing: isSpeakerOn)) route=\(audioRouteDescription())")
         guard newSpeakerState != isSpeakerOn else { return }
 
         isSpeakerOn = newSpeakerState
+        debugLog("[CallKit-DEBUG] send ACTION_CALL_TOGGLE_SPEAKER isSpeakerOn=\(newSpeakerState) callUUID=\(currentCallUUID() ?? "nil")")
         sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_SPEAKER, [
             "id": currentCallUUID(),
             "isSpeakerOn": newSpeakerState,
         ])
+    }
+    
+    private func audioRouteDescription() -> String {
+        let route = AVAudioSession.sharedInstance().currentRoute
+        let inputs = route.inputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
+        let outputs = route.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
+        return "inputs=[\(inputs)] outputs=[\(outputs)]"
+    }
+    
+    private func routeChangeReasonDescription(_ notification: Notification) -> String {
+        guard let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return "unknown"
+        }
+        
+        switch reason {
+        case .unknown:
+            return "unknown"
+        case .newDeviceAvailable:
+            return "newDeviceAvailable"
+        case .oldDeviceUnavailable:
+            return "oldDeviceUnavailable"
+        case .categoryChange:
+            return "categoryChange"
+        case .override:
+            return "override"
+        case .wakeFromSleep:
+            return "wakeFromSleep"
+        case .noSuitableRouteForCategory:
+            return "noSuitableRouteForCategory"
+        case .routeConfigurationChange:
+            return "routeConfigurationChange"
+        @unknown default:
+            return "unknownDefault(\(reasonValue))"
+        }
     }
 
     private func currentCallUUID() -> String? {

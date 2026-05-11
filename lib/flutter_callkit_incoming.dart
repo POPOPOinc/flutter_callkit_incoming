@@ -150,7 +150,10 @@ class FlutterCallkitIncoming {
     Map<String, dynamic> body = {};
 
     if (data is Map) {
-      event = Event.values.firstWhere((e) => e.name == data['event']);
+      event = Event.values.firstWhere(
+        (e) => e.name == data['event'],
+        orElse: () => Event.actionCallCustom,
+      );
       body = Map<String, dynamic>.from(data['body']);
       return CallEvent(body, event);
     }

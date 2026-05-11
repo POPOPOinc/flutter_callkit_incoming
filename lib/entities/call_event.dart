@@ -24,6 +24,7 @@ enum Event {
   actionCallToggleGroup,
   actionCallToggleAudioSession,
   actionCallToggleSpeaker,
+  actionDebugLog,
   actionCallCustom,
 }
 
@@ -61,6 +62,8 @@ extension EventX on Event {
         return 'com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_AUDIO_SESSION';
       case Event.actionCallToggleSpeaker:
         return 'com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_SPEAKER';
+      case Event.actionDebugLog:
+        return 'com.hiennv.flutter_callkit_incoming.ACTION_DEBUG_LOG';
       case Event.actionCallCustom:
         return 'com.hiennv.flutter_callkit_incoming.ACTION_CALL_CUSTOM';
     }
