@@ -1,3 +1,6 @@
+## 3.0.11
+* iOS: CallKit UIのスピーカーボタン操作によるAudioSessionルート変更を監視し、`ACTION_CALL_TOGGLE_SPEAKER`イベントとしてDart側へ通知するように変更。
+
 ## 3.0.10
 * Android: 不在着信通知が溜まり続けると、Android OS の「1 パッケージあたり 50 件」の同時通知上限に達して、以降の着信 push / 不在着信通知がサイレントに drop される問題を修正。`showMissCallNotification` および `showIncomingNotification` 発行前に `callkit_missed_channel_id` のアクティブ通知が上限 (40 件) 以上溜まっていたら、古い (postTime が小さい) ものから順に `cancel()` して、着信通知 / 着信中通知 / foreground service 通知などを含む複数通知用の十分な空き枠を確保するようにした。
 

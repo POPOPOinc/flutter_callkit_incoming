@@ -287,6 +287,9 @@ class HomePageState extends State<HomePage> {
           case Event.actionCallToggleAudioSession:
             // TODO: only iOS
             break;
+          case Event.actionCallToggleSpeaker:
+            // TODO: only iOS
+            break;
           case Event.actionDidUpdateDevicePushTokenVoip:
             // TODO: only iOS
             break;

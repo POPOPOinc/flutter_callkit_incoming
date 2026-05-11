@@ -24,6 +24,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     static let ACTION_CALL_TOGGLE_DMTF = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_DMTF"
     static let ACTION_CALL_TOGGLE_GROUP = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_GROUP"
     static let ACTION_CALL_TOGGLE_AUDIO_SESSION = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_AUDIO_SESSION"
+    static let ACTION_CALL_TOGGLE_SPEAKER = "com.hiennv.flutter_callkit_incoming.ACTION_CALL_TOGGLE_SPEAKER"
     
     @objc public private(set) static var sharedInstance: SwiftFlutterCallkitIncomingPlugin!
     
@@ -40,6 +41,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var isFromPushKit: Bool = false
     private var silenceEvents: Bool = false
     private let devicePushTokenVoIP = "DevicePushTokenVoIP"
+    private var isSpeakerOn: Bool?
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -81,6 +83,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     
     public init(messenger: FlutterBinaryMessenger) {
         callManager = CallManager()
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
     
     private func shareHandlers(with registrar: FlutterPluginRegistrar) {
@@ -529,6 +542,37 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             }
         }
     }
+
+    @objc private func handleAudioSessionRouteChange(_ notification: Notification) {
+        guard callManager.calls.contains(where: { !$0.hasEnded }) else { return }
+        updateSpeakerStateFromAudioRoute()
+    }
+
+    private func updateSpeakerStateFromAudioRoute() {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        guard outputs.contains(where: { $0.portType == .builtInReceiver || $0.portType == .builtInSpeaker }) else {
+            return
+        }
+
+        let newSpeakerState = outputs.contains { $0.portType == .builtInSpeaker }
+        guard newSpeakerState != isSpeakerOn else { return }
+
+        isSpeakerOn = newSpeakerState
+        sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_SPEAKER, [
+            "id": currentCallUUID(),
+            "isSpeakerOn": newSpeakerState,
+        ])
+    }
+
+    private func currentCallUUID() -> String? {
+        if let answerCall = answerCall, !answerCall.hasEnded {
+            return answerCall.uuid.uuidString
+        }
+        if let outgoingCall = outgoingCall, !outgoingCall.hasEnded {
+            return outgoingCall.uuid.uuidString
+        }
+        return callManager.calls.first(where: { !$0.hasEnded })?.uuid.uuidString
+    }
     
     func getAudioSessionMode(_ audioSessionMode: String?) -> AVAudioSession.Mode {
         var mode = AVAudioSession.Mode.default
@@ -755,6 +799,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         sendDefaultAudioInterruptionNotificationToStartAudioResource()
         configureAudioSession()
+        updateSpeakerStateFromAudioRoute()
 
         self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActivate": true ])
     }
