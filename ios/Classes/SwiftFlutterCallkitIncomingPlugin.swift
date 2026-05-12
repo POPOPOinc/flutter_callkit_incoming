@@ -555,10 +555,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let activeCallCount = callManager.calls.filter { !$0.hasEnded }.count
         debugLog("[CallKit-DEBUG] routeChangeNotification reason=\(routeChangeReasonDescription(notification)) activeCallCount=\(activeCallCount) route=\(audioRouteDescription()) trackedSpeaker=\(String(describing: isSpeakerOn))")
         guard activeCallCount > 0 else { return }
-        updateSpeakerStateFromAudioRoute()
+        updateSpeakerStateFromAudioRoute(reason: routeChangeReasonDescription(notification))
     }
 
-    private func updateSpeakerStateFromAudioRoute() {
+    private func updateSpeakerStateFromAudioRoute(reason: String = "unknown") {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
         guard outputs.contains(where: { $0.portType == .builtInReceiver || $0.portType == .builtInSpeaker }) else {
             debugLog("[CallKit-DEBUG] updateSpeakerState skipped route=\(audioRouteDescription())")
@@ -569,11 +569,14 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         debugLog("[CallKit-DEBUG] updateSpeakerState new=\(newSpeakerState) previous=\(String(describing: isSpeakerOn)) route=\(audioRouteDescription())")
         guard newSpeakerState != isSpeakerOn else { return }
 
+        let isInitial = isSpeakerOn == nil
         isSpeakerOn = newSpeakerState
-        debugLog("[CallKit-DEBUG] send ACTION_CALL_TOGGLE_SPEAKER isSpeakerOn=\(newSpeakerState) callUUID=\(currentCallUUID() ?? "nil")")
+        debugLog("[CallKit-DEBUG] send ACTION_CALL_TOGGLE_SPEAKER isSpeakerOn=\(newSpeakerState) isInitial=\(isInitial) reason=\(reason) callUUID=\(currentCallUUID() ?? "nil")")
         sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_SPEAKER, [
             "id": currentCallUUID(),
             "isSpeakerOn": newSpeakerState,
+            "isInitial": isInitial,
+            "reason": reason,
         ])
     }
     
@@ -664,6 +667,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             call.endCall()
         }
         self.callManager.removeAllCalls()
+        isSpeakerOn = nil
     }
     
     public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
@@ -731,6 +735,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         call.endCall()
         self.callManager.removeCall(call)
+        if self.callManager.calls.filter({ !$0.hasEnded }).isEmpty {
+            isSpeakerOn = nil
+        }
 
         // このコールが実際に応答済みかどうかをUUIDで確認
         let isThisCallAnswered = (self.answerCall?.uuid == action.callUUID)
@@ -847,7 +854,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         sendDefaultAudioInterruptionNotificationToStartAudioResource()
         configureAudioSession()
-        updateSpeakerStateFromAudioRoute()
+        updateSpeakerStateFromAudioRoute(reason: "didActivate")
 
         self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActivate": true ])
     }
