@@ -537,8 +537,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                     .duckOthers,
                     .allowBluetooth,
                 ])
-                
+
                 try session.setMode(self.getAudioSessionMode(data?.audioSessionMode))
+                debugLog("[CallKit-DEBUG] configureAudioSession category=\(session.category.rawValue) mode=\(session.mode.rawValue) options=\(session.categoryOptions.rawValue) route=\(audioRouteDescription())")
                 // setActive の呼び出しを削除:
                 // AudioSession の active 状態管理は CallKit
                 // (didActivateAudioSession / didDeactivateAudioSession) に委譲する。
@@ -692,9 +693,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         self.configureAudioSession()
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(1200)) {
-            self.configureAudioSession()
-        }
 
 
         call.hasConnectDidChange = { [weak self] in
