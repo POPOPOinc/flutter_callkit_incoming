@@ -531,17 +531,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     func configureAudioSession(){
         if data?.configureAudioSession != false {
             let session = AVAudioSession.sharedInstance()
-            let categoryOptions: AVAudioSession.CategoryOptions = [
-                .allowBluetoothA2DP,
-                .duckOthers,
-                .allowBluetooth,
-            ]
             do{
-                try session.setCategory(
-                    AVAudioSession.Category.playAndRecord,
-                    mode: self.getAudioSessionMode(data?.audioSessionMode),
-                    options: categoryOptions
-                )
+                try session.setCategory(AVAudioSession.Category.playAndRecord, options: [
+                    .allowBluetoothA2DP,
+                    .duckOthers,
+                    .allowBluetooth,
+                ])
+
                 try session.setMode(self.getAudioSessionMode(data?.audioSessionMode))
                 debugLog("[CallKit-DEBUG] configureAudioSession category=\(session.category.rawValue) mode=\(session.mode.rawValue) options=\(session.categoryOptions.rawValue) route=\(audioRouteDescription())")
                 // setActive の呼び出しを削除:
