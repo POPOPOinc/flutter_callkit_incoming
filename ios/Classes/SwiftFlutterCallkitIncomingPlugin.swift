@@ -48,6 +48,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var routeChangeSequence: Int = 0
     private var answerActionAt: Date?
     private var lastSpeakerEventSentAt: Date?
+    private var receiverRestoreAttemptedForSelection: Bool = false
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -593,14 +594,20 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let beforeUserSelectedSpeakerOn = userSelectedSpeakerOn
         if isUserSelection {
             userSelectedSpeakerOn = newSpeakerState
+            receiverRestoreAttemptedForSelection = false
         }
         let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
         debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
 
         if reason == "override" && newSpeakerState && userSelectedSpeakerOn == false {
-            debugLog("[CallKit-DEBUG] suppress speaker override because user selected receiver seq=\(String(describing: sequence)) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs))")
-            restoreUserSelectedReceiverAfterSpeakerOverride()
-            return
+            if !receiverRestoreAttemptedForSelection {
+                receiverRestoreAttemptedForSelection = true
+                debugLog("[CallKit-DEBUG] suppress speaker override because user selected receiver seq=\(String(describing: sequence)) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs))")
+                restoreUserSelectedReceiverAfterSpeakerOverride()
+                return
+            }
+            userSelectedSpeakerOn = newSpeakerState
+            debugLog("[CallKit-DEBUG] allow speaker override after receiver restore attempt seq=\(String(describing: sequence)) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs))")
         }
 
         guard forceEmit || newSpeakerState != previousSpeakerState else {
@@ -742,6 +749,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.callManager.removeAllCalls()
         isSpeakerOn = nil
         userSelectedSpeakerOn = nil
+        receiverRestoreAttemptedForSelection = false
         answerActionAt = nil
         lastSpeakerEventSentAt = nil
     }
@@ -816,6 +824,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         if self.callManager.calls.filter({ !$0.hasEnded }).isEmpty {
             isSpeakerOn = nil
             userSelectedSpeakerOn = nil
+            receiverRestoreAttemptedForSelection = false
             answerActionAt = nil
             lastSpeakerEventSentAt = nil
         }
