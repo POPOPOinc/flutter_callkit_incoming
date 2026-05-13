@@ -45,6 +45,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var isSpeakerOn: Bool?
     private var userSelectedSpeakerOn: Bool?
     private var isRestoringUserSelectedReceiver: Bool = false
+    private var routeChangeSequence: Int = 0
+    private var answerActionAt: Date?
+    private var lastSpeakerEventSentAt: Date?
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -556,14 +559,26 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     @objc private func handleAudioSessionRouteChange(_ notification: Notification) {
         let activeCallCount = callManager.calls.filter { !$0.hasEnded }.count
         let reason = routeChangeReasonDescription(notification)
-        debugLog("[CallKit-DEBUG] routeChangeNotification reason=\(reason) activeCallCount=\(activeCallCount) route=\(audioRouteDescription()) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn))")
+        routeChangeSequence += 1
+        let elapsedSinceAnswer = elapsedMilliseconds(since: answerActionAt)
+        let elapsedSinceLastSpeakerEvent = elapsedMilliseconds(since: lastSpeakerEventSentAt)
+        debugLog("[CallKit-DEBUG] routeChangeNotification seq=\(routeChangeSequence) reason=\(reason) activeCallCount=\(activeCallCount) elapsedSinceAnswerMs=\(elapsedSinceAnswer) elapsedSinceLastSpeakerEventMs=\(elapsedSinceLastSpeakerEvent) route=\(audioRouteDescription()) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn))")
         guard activeCallCount > 0 else { return }
-        updateSpeakerStateFromAudioRoute(reason: reason, forceEmit: reason == "override")
+        updateSpeakerStateFromAudioRoute(
+            reason: reason,
+            forceEmit: reason == "override",
+            sequence: routeChangeSequence,
+            elapsedSinceAnswerMs: elapsedSinceAnswer,
+            elapsedSinceLastSpeakerEventMs: elapsedSinceLastSpeakerEvent
+        )
     }
 
     private func updateSpeakerStateFromAudioRoute(
         reason: String = "unknown",
-        forceEmit: Bool = false
+        forceEmit: Bool = false,
+        sequence: Int? = nil,
+        elapsedSinceAnswerMs: Int? = nil,
+        elapsedSinceLastSpeakerEventMs: Int? = nil
     ) {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
         guard outputs.contains(where: { $0.portType == .builtInReceiver || $0.portType == .builtInSpeaker }) else {
@@ -575,21 +590,27 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let previousSpeakerState = isSpeakerOn
         let isInitial = previousSpeakerState == nil
         let isUserSelection = !isInitial && reason == "categoryChange" && newSpeakerState != previousSpeakerState
+        let beforeUserSelectedSpeakerOn = userSelectedSpeakerOn
         if isUserSelection {
             userSelectedSpeakerOn = newSpeakerState
         }
-        debugLog("[CallKit-DEBUG] updateSpeakerState new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) isInitial=\(isInitial) isUserSelection=\(isUserSelection) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
+        let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
+        debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
 
         if reason == "override" && newSpeakerState && userSelectedSpeakerOn == false {
-            debugLog("[CallKit-DEBUG] suppress speaker override because user selected receiver")
+            debugLog("[CallKit-DEBUG] suppress speaker override because user selected receiver seq=\(String(describing: sequence)) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs))")
             restoreUserSelectedReceiverAfterSpeakerOverride()
             return
         }
 
-        guard forceEmit || newSpeakerState != previousSpeakerState else { return }
+        guard forceEmit || newSpeakerState != previousSpeakerState else {
+            debugLog("[CallKit-DEBUG] speaker event not sent seq=\(String(describing: sequence)) reason=no-change forceEmit=\(forceEmit) current=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn))")
+            return
+        }
 
         isSpeakerOn = newSpeakerState
-        debugLog("[CallKit-DEBUG] send ACTION_CALL_TOGGLE_SPEAKER isSpeakerOn=\(newSpeakerState) isInitial=\(isInitial) reason=\(reason) isUserSelection=\(isUserSelection) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) callUUID=\(currentCallUUID() ?? "nil")")
+        lastSpeakerEventSentAt = Date()
+        debugLog("[CallKit-DEBUG] send ACTION_CALL_TOGGLE_SPEAKER seq=\(String(describing: sequence)) isSpeakerOn=\(newSpeakerState) isInitial=\(isInitial) reason=\(reason) isUserSelection=\(isUserSelection) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) callUUID=\(currentCallUUID() ?? "nil")")
         sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_SPEAKER, [
             "id": currentCallUUID(),
             "isSpeakerOn": newSpeakerState,
@@ -601,15 +622,22 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     }
 
     private func restoreUserSelectedReceiverAfterSpeakerOverride() {
+        debugLog("[CallKit-DEBUG] restore receiver scheduled isRestoring=\(isRestoringUserSelectedReceiver) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
         guard !isRestoringUserSelectedReceiver else { return }
         isRestoringUserSelectedReceiver = true
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
             guard let self = self else { return }
             self.isRestoringUserSelectedReceiver = false
-            guard self.userSelectedSpeakerOn == false else { return }
+            guard self.userSelectedSpeakerOn == false else {
+                self.debugLog("[CallKit-DEBUG] restore receiver canceled because userSelectedSpeaker=\(String(describing: self.userSelectedSpeakerOn))")
+                return
+            }
 
             let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
-            guard outputs.contains(where: { $0.portType == .builtInSpeaker }) else { return }
+            guard outputs.contains(where: { $0.portType == .builtInSpeaker }) else {
+                self.debugLog("[CallKit-DEBUG] restore receiver skipped because route is no longer speaker route=\(self.audioRouteDescription())")
+                return
+            }
 
             do {
                 self.debugLog("[CallKit-DEBUG] restore receiver by clearing speaker override route=\(self.audioRouteDescription())")
@@ -625,6 +653,11 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let inputs = route.inputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
         let outputs = route.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
         return "inputs=[\(inputs)] outputs=[\(outputs)]"
+    }
+
+    private func elapsedMilliseconds(since date: Date?) -> Int {
+        guard let date = date else { return -1 }
+        return Int(Date().timeIntervalSince(date) * 1000)
     }
     
     private func routeChangeReasonDescription(_ notification: Notification) -> String {
@@ -709,6 +742,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.callManager.removeAllCalls()
         isSpeakerOn = nil
         userSelectedSpeakerOn = nil
+        answerActionAt = nil
+        lastSpeakerEventSentAt = nil
     }
     
     public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
@@ -732,6 +767,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             action.fail()
             return
         }
+        answerActionAt = Date()
+        debugLog("[CallKit-DEBUG] answer action started uuid=\(action.callUUID.uuidString) routeSeq=\(routeChangeSequence) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
         self.configureAudioSession()
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(1200)) {
             self.configureAudioSession()
@@ -779,6 +816,8 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         if self.callManager.calls.filter({ !$0.hasEnded }).isEmpty {
             isSpeakerOn = nil
             userSelectedSpeakerOn = nil
+            answerActionAt = nil
+            lastSpeakerEventSentAt = nil
         }
 
         // このコールが実際に応答済みかどうかをUUIDで確認
