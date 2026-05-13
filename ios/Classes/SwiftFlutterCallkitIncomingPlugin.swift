@@ -823,21 +823,58 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
 }
 
 class EventCallbackHandler: NSObject, FlutterStreamHandler {
+    // ロック画面からの CallKit accept のように Dart 側リスナーが subscribe
+    // するより前にイベントが発火するケースがあるため、ライフサイクル系イベント
+    // は subscribe されるまでバッファに保持し、onListen 呼び出し時にまとめて
+    // 配信する。
+    private static let maxBufferedEvents = 50
+
+    // バッファ対象のライフサイクルイベント。mute / hold / audio session 等の
+    // 一時的な状態イベントは、後から再送すると現在の状態と矛盾するため除外。
+    private static let bufferedEventTypes: Set<String> = [
+        SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_INCOMING,
+        SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_START,
+        SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ACCEPT,
+        SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_DECLINE,
+        SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_ENDED,
+        SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TIMEOUT,
+    ]
+
     private var eventSink: FlutterEventSink?
-    
+    private var pendingEvents: [[String: Any]] = []
+
     public func send(_ event: String, _ body: Any) {
         let data: [String : Any] = [
             "event": event,
             "body": body
         ]
-        eventSink?(data)
+        if let sink = eventSink {
+            sink(data)
+            return
+        }
+        guard EventCallbackHandler.bufferedEventTypes.contains(event) else {
+            return
+        }
+        pendingEvents.append(data)
+        if pendingEvents.count > EventCallbackHandler.maxBufferedEvents {
+            pendingEvents.removeFirst(
+                pendingEvents.count - EventCallbackHandler.maxBufferedEvents
+            )
+        }
     }
-    
+
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = events
+        if !pendingEvents.isEmpty {
+            let buffered = pendingEvents
+            pendingEvents.removeAll()
+            for data in buffered {
+                events(data)
+            }
+        }
         return nil
     }
-    
+
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
         self.eventSink = nil
         return nil

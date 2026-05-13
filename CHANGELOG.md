@@ -1,3 +1,6 @@
+## 3.0.11
+* iOS: Dart 側 `FlutterCallkitIncoming.onEvent` リスナーが subscribe する前に発火したライフサイクル系イベント (`ACTION_CALL_ACCEPT` / `ACTION_CALL_DECLINE` / `ACTION_CALL_ENDED` / `ACTION_CALL_TIMEOUT` / `ACTION_CALL_INCOMING` / `ACTION_CALL_START`) がサイレントに drop される問題を修正。`EventCallbackHandler` 内に最大 50 件のバッファを設け、`onListen` 呼び出し時にまとめて配信するようにした。ロック画面で CallKit accept された場合に Flutter Engine の cold start が完了する前に発火する `ACTION_CALL_ACCEPT` がロストして直接参加処理が走らなかった問題を解消する。mute / hold / audio session トグルなどの状態系イベントは現状の動作と矛盾を避けるためバッファ対象外。
+
 ## 3.0.10
 * Android: 不在着信通知が溜まり続けると、Android OS の「1 パッケージあたり 50 件」の同時通知上限に達して、以降の着信 push / 不在着信通知がサイレントに drop される問題を修正。`showMissCallNotification` および `showIncomingNotification` 発行前に `callkit_missed_channel_id` のアクティブ通知が上限 (40 件) 以上溜まっていたら、古い (postTime が小さい) ものから順に `cancel()` して、着信通知 / 着信中通知 / foreground service 通知などを含む複数通知用の十分な空き枠を確保するようにした。
 
