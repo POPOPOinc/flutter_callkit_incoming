@@ -48,6 +48,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var answerActionAt: Date?
     private var lastSpeakerEventSentAt: Date?
     private var isApplyingCallKitAudioSessionConfiguration: Bool = false
+    private var initialRouteStabilizedAt: Date?
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -617,6 +618,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
 
+        if isImmediateReceiverRevert {
+            debugLog("[CallKit-DEBUG] receiver revert after speaker selection detected seq=\(String(describing: sequence)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
+        }
+
         isSpeakerOn = newSpeakerState
         lastSpeakerEventSentAt = Date()
         debugLog("[CallKit-DEBUG] send ACTION_CALL_TOGGLE_SPEAKER seq=\(String(describing: sequence)) isSpeakerOn=\(newSpeakerState) isInitial=\(isInitial) reason=\(reason) isUserSelection=\(isUserSelection) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) callUUID=\(currentCallUUID() ?? "nil")")
@@ -743,6 +748,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         userSelectedSpeakerOn = nil
         answerActionAt = nil
         lastSpeakerEventSentAt = nil
+        initialRouteStabilizedAt = nil
     }
     
     public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
@@ -767,10 +773,18 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         answerActionAt = Date()
+        initialRouteStabilizedAt = nil
         debugLog("[CallKit-DEBUG] answer action started uuid=\(action.callUUID.uuidString) routeSeq=\(routeChangeSequence) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
         self.configureCallKitAudioSession()
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(1200)) {
             self.configureCallKitAudioSession()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(3500)) {
+            guard self.callManager.calls.contains(where: { $0.uuid == action.callUUID && !$0.hasEnded }) else {
+                return
+            }
+            self.initialRouteStabilizedAt = Date()
+            self.debugLog("[CallKit-DEBUG] initial route stabilized uuid=\(action.callUUID.uuidString) routeSeq=\(self.routeChangeSequence) trackedSpeaker=\(String(describing: self.isSpeakerOn)) userSelectedSpeaker=\(String(describing: self.userSelectedSpeakerOn)) route=\(self.audioRouteDescription())")
         }
 
 
@@ -817,6 +831,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             userSelectedSpeakerOn = nil
             answerActionAt = nil
             lastSpeakerEventSentAt = nil
+            initialRouteStabilizedAt = nil
         }
 
         // このコールが実際に応答済みかどうかをUUIDで確認
