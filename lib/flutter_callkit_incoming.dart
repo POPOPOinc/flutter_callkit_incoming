@@ -98,10 +98,6 @@ class FlutterCallkitIncoming {
     await _channel.invokeMethod("callConnected", {'id': id});
   }
 
-  static Future setAudioRoute({required bool isSpeakerOn}) async {
-    await _channel.invokeMethod("setAudioRoute", {'isSpeakerOn': isSpeakerOn});
-  }
-
   /// End all calls.
   static Future endAllCalls() async {
     await _channel.invokeMethod("endAllCalls");

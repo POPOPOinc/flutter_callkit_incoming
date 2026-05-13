@@ -257,12 +257,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             result(true)
             break
         case "setAudioRoute":
-            guard let args = call.arguments as? [String: Any],
-                  let isSpeakerOn = args["isSpeakerOn"] as? Bool else {
-                result(false)
-                return
-            }
-            setAudioRoute(isSpeakerOn: isSpeakerOn)
             result(true)
             break
         default:
@@ -580,22 +574,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         configureCallKitAudioSession()
     }
 
-    private func setAudioRoute(isSpeakerOn: Bool) {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            debugLog("[CallKit-DEBUG] setAudioRoute requested isSpeakerOn=\(isSpeakerOn) routeBefore=\(audioRouteDescription())")
-            try session.overrideOutputAudioPort(isSpeakerOn ? .speaker : .none)
-            userSelectedSpeakerOn = isSpeakerOn
-            updateSpeakerStateFromAudioRoute(
-                reason: "appSetAudioRoute",
-                forceEmit: true
-            )
-            debugLog("[CallKit-DEBUG] setAudioRoute completed isSpeakerOn=\(isSpeakerOn) routeAfter=\(audioRouteDescription())")
-        } catch {
-            debugLog("[CallKit-DEBUG] setAudioRoute failed isSpeakerOn=\(isSpeakerOn) error=\(error.localizedDescription) route=\(audioRouteDescription())")
-        }
-    }
-
     @objc private func handleAudioSessionRouteChange(_ notification: Notification) {
         let activeCallCount = callManager.calls.filter { !$0.hasEnded }.count
         let reason = routeChangeReasonDescription(notification)
@@ -629,7 +607,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let newSpeakerState = outputs.contains { $0.portType == .builtInSpeaker }
         let previousSpeakerState = isSpeakerOn
         let isInitial = previousSpeakerState == nil
-        let isUserSelection = reason == "appSetAudioRoute"
+        let isUserSelection = false
         let beforeUserSelectedSpeakerOn = userSelectedSpeakerOn
         let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
         debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
