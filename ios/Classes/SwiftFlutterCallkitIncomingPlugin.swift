@@ -607,17 +607,27 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let newSpeakerState = outputs.contains { $0.portType == .builtInSpeaker }
         let previousSpeakerState = isSpeakerOn
         let isInitial = previousSpeakerState == nil
-        let isUserSelection = !isInitial && reason == "categoryChange" && newSpeakerState != previousSpeakerState
+        let speakerOnFromReceiver = !isInitial && reason == "override" && newSpeakerState && previousSpeakerState == false
+        let isDelayedSpeakerOn = elapsedSinceLastSpeakerEventMs == nil || (elapsedSinceLastSpeakerEventMs ?? 0) < 0 || (elapsedSinceLastSpeakerEventMs ?? 0) > 700
+        let isSpeakerOnSelection = speakerOnFromReceiver && (userSelectedSpeakerOn != false || isDelayedSpeakerOn)
+        let receiverFromSpeaker = !isInitial && reason == "categoryChange" && !newSpeakerState && previousSpeakerState == true
+        let isImmediateReceiverRevert = receiverFromSpeaker && userSelectedSpeakerOn == true && (elapsedSinceLastSpeakerEventMs ?? 0) >= 0 && (elapsedSinceLastSpeakerEventMs ?? 0) <= 700
+        let isReceiverSelection = receiverFromSpeaker && !isImmediateReceiverRevert
+        let isUserSelection = isSpeakerOnSelection || isReceiverSelection
         let beforeUserSelectedSpeakerOn = userSelectedSpeakerOn
         if isUserSelection {
             userSelectedSpeakerOn = newSpeakerState
         }
         let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
-        debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
+        debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) isSpeakerOnSelection=\(isSpeakerOnSelection) isReceiverSelection=\(isReceiverSelection) isImmediateReceiverRevert=\(isImmediateReceiverRevert) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
 
         guard forceEmit || newSpeakerState != previousSpeakerState else {
             debugLog("[CallKit-DEBUG] speaker event not sent seq=\(String(describing: sequence)) reason=no-change forceEmit=\(forceEmit) current=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn))")
             return
+        }
+
+        if isImmediateReceiverRevert {
+            debugLog("[CallKit-DEBUG] receiver revert after speaker selection detected seq=\(String(describing: sequence)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
         }
 
         isSpeakerOn = newSpeakerState
