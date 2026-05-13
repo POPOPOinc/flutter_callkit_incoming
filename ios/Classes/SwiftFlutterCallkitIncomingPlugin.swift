@@ -44,11 +44,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private let devicePushTokenVoIP = "DevicePushTokenVoIP"
     private var isSpeakerOn: Bool?
     private var userSelectedSpeakerOn: Bool?
-    private var isRestoringUserSelectedReceiver: Bool = false
     private var routeChangeSequence: Int = 0
     private var answerActionAt: Date?
     private var lastSpeakerEventSentAt: Date?
-    private var receiverRestoreAttemptedForSelection: Bool = false
+    private var isApplyingCallKitAudioSessionConfiguration: Bool = false
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -310,10 +309,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         
         let uuid = UUID(uuidString: data.uuid)
         
-        self.configureAudioSession()
+        self.configureCallKitAudioSession()
         self.sharedProvider?.reportNewIncomingCall(with: uuid!, update: callUpdate) { error in
             if(error == nil) {
-                self.configureAudioSession()
+                self.configureCallKitAudioSession()
                 let call = Call(uuid: uuid!, data: data)
                 call.handle = data.handle
                 self.callManager.addCall(call)
@@ -351,7 +350,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         
         self.sharedProvider?.reportNewIncomingCall(with: uuid!, update: callUpdate) { error in
             if(error == nil) {
-                self.configureAudioSession()
+                self.configureCallKitAudioSession()
                 let call = Call(uuid: uuid!, data: data)
                 call.handle = data.handle
                 self.callManager.addCall(call)
@@ -538,13 +537,17 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         if data?.configureAudioSession != false {
             let session = AVAudioSession.sharedInstance()
             do{
-                try session.setCategory(AVAudioSession.Category.playAndRecord, options: [
+                let mode = self.getAudioSessionMode(data?.audioSessionMode)
+                let options: AVAudioSession.CategoryOptions = isApplyingCallKitAudioSessionConfiguration ? [
+                    .duckOthers,
+                    .allowBluetooth,
+                ] : [
                     .allowBluetoothA2DP,
                     .duckOthers,
                     .allowBluetooth,
-                ])
-                
-                try session.setMode(self.getAudioSessionMode(data?.audioSessionMode))
+                ]
+                debugLog("[CallKit-DEBUG] configureAudioSession mode=\(mode.rawValue) options=\(audioSessionCategoryOptionsDescription(options)) isCallKit=\(isApplyingCallKitAudioSessionConfiguration) route=\(audioRouteDescription())")
+                try session.setCategory(AVAudioSession.Category.playAndRecord, mode: mode, options: options)
                 // setActive の呼び出しを削除:
                 // AudioSession の active 状態管理は CallKit
                 // (didActivateAudioSession / didDeactivateAudioSession) に委譲する。
@@ -555,6 +558,20 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
                 print(error)
             }
         }
+    }
+
+    private func configureCallKitAudioSession() {
+        isApplyingCallKitAudioSessionConfiguration = true
+        configureAudioSession()
+        isApplyingCallKitAudioSessionConfiguration = false
+    }
+
+    private func configureIncomingCallKitAudioSession() {
+        guard self.callManager.calls.contains(where: { !$0.hasEnded }) || self.answerCall != nil else {
+            configureAudioSession()
+            return
+        }
+        configureCallKitAudioSession()
     }
 
     @objc private func handleAudioSessionRouteChange(_ notification: Notification) {
@@ -594,21 +611,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let beforeUserSelectedSpeakerOn = userSelectedSpeakerOn
         if isUserSelection {
             userSelectedSpeakerOn = newSpeakerState
-            receiverRestoreAttemptedForSelection = false
         }
         let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
         debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
-
-        if reason == "override" && newSpeakerState && userSelectedSpeakerOn == false {
-            if !receiverRestoreAttemptedForSelection {
-                receiverRestoreAttemptedForSelection = true
-                debugLog("[CallKit-DEBUG] suppress speaker override because user selected receiver seq=\(String(describing: sequence)) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs))")
-                restoreUserSelectedReceiverAfterSpeakerOverride()
-                return
-            }
-            userSelectedSpeakerOn = newSpeakerState
-            debugLog("[CallKit-DEBUG] allow speaker override after receiver restore attempt seq=\(String(describing: sequence)) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs))")
-        }
 
         guard forceEmit || newSpeakerState != previousSpeakerState else {
             debugLog("[CallKit-DEBUG] speaker event not sent seq=\(String(describing: sequence)) reason=no-change forceEmit=\(forceEmit) current=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn))")
@@ -627,39 +632,29 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             "userSelectedSpeakerOn": userSelectedSpeakerOn,
         ])
     }
-
-    private func restoreUserSelectedReceiverAfterSpeakerOverride() {
-        debugLog("[CallKit-DEBUG] restore receiver scheduled isRestoring=\(isRestoringUserSelectedReceiver) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
-        guard !isRestoringUserSelectedReceiver else { return }
-        isRestoringUserSelectedReceiver = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
-            guard let self = self else { return }
-            self.isRestoringUserSelectedReceiver = false
-            guard self.userSelectedSpeakerOn == false else {
-                self.debugLog("[CallKit-DEBUG] restore receiver canceled because userSelectedSpeaker=\(String(describing: self.userSelectedSpeakerOn))")
-                return
-            }
-
-            let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
-            guard outputs.contains(where: { $0.portType == .builtInSpeaker }) else {
-                self.debugLog("[CallKit-DEBUG] restore receiver skipped because route is no longer speaker route=\(self.audioRouteDescription())")
-                return
-            }
-
-            do {
-                self.debugLog("[CallKit-DEBUG] restore receiver by clearing speaker override route=\(self.audioRouteDescription())")
-                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
-            } catch {
-                self.debugLog("[CallKit-DEBUG] restore receiver failed error=\(error.localizedDescription) route=\(self.audioRouteDescription())")
-            }
-        }
-    }
     
     private func audioRouteDescription() -> String {
         let route = AVAudioSession.sharedInstance().currentRoute
         let inputs = route.inputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
         let outputs = route.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
         return "inputs=[\(inputs)] outputs=[\(outputs)]"
+    }
+
+    private func audioSessionCategoryOptionsDescription(_ options: AVAudioSession.CategoryOptions) -> String {
+        var names: [String] = []
+        if options.contains(.mixWithOthers) { names.append("mixWithOthers") }
+        if options.contains(.duckOthers) { names.append("duckOthers") }
+        if options.contains(.allowBluetooth) { names.append("allowBluetooth") }
+        if options.contains(.defaultToSpeaker) { names.append("defaultToSpeaker") }
+        if options.contains(.interruptSpokenAudioAndMixWithOthers) { names.append("interruptSpokenAudioAndMixWithOthers") }
+        if #available(iOS 10.0, *) {
+            if options.contains(.allowBluetoothA2DP) { names.append("allowBluetoothA2DP") }
+            if options.contains(.allowAirPlay) { names.append("allowAirPlay") }
+        }
+        if #available(iOS 14.5, *) {
+            if options.contains(.overrideMutedMicrophoneInterruption) { names.append("overrideMutedMicrophoneInterruption") }
+        }
+        return names.joined(separator: ",")
     }
 
     private func elapsedMilliseconds(since date: Date?) -> Int {
@@ -749,7 +744,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         self.callManager.removeAllCalls()
         isSpeakerOn = nil
         userSelectedSpeakerOn = nil
-        receiverRestoreAttemptedForSelection = false
         answerActionAt = nil
         lastSpeakerEventSentAt = nil
     }
@@ -777,9 +771,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         }
         answerActionAt = Date()
         debugLog("[CallKit-DEBUG] answer action started uuid=\(action.callUUID.uuidString) routeSeq=\(routeChangeSequence) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
-        self.configureAudioSession()
+        self.configureCallKitAudioSession()
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(1200)) {
-            self.configureAudioSession()
+            self.configureCallKitAudioSession()
         }
 
 
@@ -824,7 +818,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         if self.callManager.calls.filter({ !$0.hasEnded }).isEmpty {
             isSpeakerOn = nil
             userSelectedSpeakerOn = nil
-            receiverRestoreAttemptedForSelection = false
             answerActionAt = nil
             lastSpeakerEventSentAt = nil
         }
@@ -943,7 +936,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             }
         }
         sendDefaultAudioInterruptionNotificationToStartAudioResource()
-        configureAudioSession()
+        configureIncomingCallKitAudioSession()
         updateSpeakerStateFromAudioRoute()
 
         self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActivate": true ])
