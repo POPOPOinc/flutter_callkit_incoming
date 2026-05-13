@@ -48,6 +48,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var answerActionAt: Date?
     private var lastSpeakerEventSentAt: Date?
     private var isApplyingCallKitAudioSessionConfiguration: Bool = false
+    private var initialRouteStabilizedAt: Date?
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -607,7 +608,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let newSpeakerState = outputs.contains { $0.portType == .builtInSpeaker }
         let previousSpeakerState = isSpeakerOn
         let isInitial = previousSpeakerState == nil
-        let speakerOnFromReceiver = !isInitial && reason == "override" && newSpeakerState && previousSpeakerState == false
+        let elapsedSinceInitialRouteStabilizedMs = initialRouteStabilizedAt.map { Int(Date().timeIntervalSince($0) * 1000) }
+        let isAfterInitialRouteStabilized = elapsedSinceInitialRouteStabilizedMs != nil && (elapsedSinceInitialRouteStabilizedMs ?? 0) >= 0
+        let speakerOnFromReceiver = isAfterInitialRouteStabilized && !isInitial && reason == "override" && newSpeakerState && previousSpeakerState == false
         let isDelayedSpeakerOn = elapsedSinceLastSpeakerEventMs == nil || (elapsedSinceLastSpeakerEventMs ?? 0) < 0 || (elapsedSinceLastSpeakerEventMs ?? 0) > 700
         let isSpeakerOnSelection = speakerOnFromReceiver && (userSelectedSpeakerOn != false || isDelayedSpeakerOn)
         let receiverFromSpeaker = !isInitial && reason == "categoryChange" && !newSpeakerState && previousSpeakerState == true
@@ -619,7 +622,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             userSelectedSpeakerOn = newSpeakerState
         }
         let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
-        debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) isSpeakerOnSelection=\(isSpeakerOnSelection) isReceiverSelection=\(isReceiverSelection) isImmediateReceiverRevert=\(isImmediateReceiverRevert) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
+        debugLog("[CallKit-DEBUG] updateSpeakerState seq=\(String(describing: sequence)) new=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) reason=\(reason) forceEmit=\(forceEmit) isInitial=\(isInitial) isUserSelection=\(isUserSelection) isSpeakerOnSelection=\(isSpeakerOnSelection) isReceiverSelection=\(isReceiverSelection) isImmediateReceiverRevert=\(isImmediateReceiverRevert) isAfterInitialRouteStabilized=\(isAfterInitialRouteStabilized) elapsedSinceInitialRouteStabilizedMs=\(String(describing: elapsedSinceInitialRouteStabilizedMs)) userSelectionBefore=\(String(describing: beforeUserSelectedSpeakerOn)) userSelectionAfter=\(String(describing: userSelectedSpeakerOn)) didUpdateUserSelection=\(didUpdateUserSelection) elapsedSinceAnswerMs=\(String(describing: elapsedSinceAnswerMs)) elapsedSinceLastSpeakerEventMs=\(String(describing: elapsedSinceLastSpeakerEventMs)) route=\(audioRouteDescription())")
 
         guard forceEmit || newSpeakerState != previousSpeakerState else {
             debugLog("[CallKit-DEBUG] speaker event not sent seq=\(String(describing: sequence)) reason=no-change forceEmit=\(forceEmit) current=\(newSpeakerState) previous=\(String(describing: previousSpeakerState)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn))")
@@ -756,6 +759,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         userSelectedSpeakerOn = nil
         answerActionAt = nil
         lastSpeakerEventSentAt = nil
+        initialRouteStabilizedAt = nil
     }
     
     public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
@@ -780,10 +784,18 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         answerActionAt = Date()
+        initialRouteStabilizedAt = nil
         debugLog("[CallKit-DEBUG] answer action started uuid=\(action.callUUID.uuidString) routeSeq=\(routeChangeSequence) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
         self.configureCallKitAudioSession()
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(1200)) {
             self.configureCallKitAudioSession()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(3500)) {
+            guard self.callManager.calls.contains(where: { $0.uuid == action.callUUID && !$0.hasEnded }) else {
+                return
+            }
+            self.initialRouteStabilizedAt = Date()
+            self.debugLog("[CallKit-DEBUG] initial route stabilized uuid=\(action.callUUID.uuidString) routeSeq=\(self.routeChangeSequence) trackedSpeaker=\(String(describing: self.isSpeakerOn)) userSelectedSpeaker=\(String(describing: self.userSelectedSpeakerOn)) route=\(self.audioRouteDescription())")
         }
 
 
@@ -830,6 +842,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             userSelectedSpeakerOn = nil
             answerActionAt = nil
             lastSpeakerEventSentAt = nil
+            initialRouteStabilizedAt = nil
         }
 
         // このコールが実際に応答済みかどうかをUUIDで確認
