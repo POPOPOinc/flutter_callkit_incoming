@@ -775,9 +775,6 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         answerActionAt = Date()
         debugLog("[CallKit-DEBUG] answer action started uuid=\(action.callUUID.uuidString) routeSeq=\(routeChangeSequence) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
         self.configureCallKitAudioSession(context: "answerAction")
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(1200)) {
-            self.configureCallKitAudioSession(context: "answerAction.delayed1200ms")
-        }
 
 
         call.hasConnectDidChange = { [weak self] in
