@@ -537,7 +537,12 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         if data?.configureAudioSession != false {
             let session = AVAudioSession.sharedInstance()
             do{
-                let mode = self.getAudioSessionMode(data?.audioSessionMode)
+                let mode: AVAudioSession.Mode
+                if isApplyingCallKitAudioSessionConfiguration {
+                    mode = AVAudioSession.Mode.voiceChat
+                } else {
+                    mode = self.getAudioSessionMode(data?.audioSessionMode)
+                }
                 let options: AVAudioSession.CategoryOptions = isApplyingCallKitAudioSessionConfiguration ? [
                     .duckOthers,
                     .allowBluetooth,
