@@ -48,6 +48,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var answerActionAt: Date?
     private var lastSpeakerEventSentAt: Date?
     private var isApplyingCallKitAudioSessionConfiguration: Bool = false
+    private var didObserveUserRouteOverrideAfterAnswer: Bool = false
 
     
     private func sendEvent(_ event: String, _ body: [String : Any?]?) {
@@ -257,6 +258,10 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             result(true)
             break
         case "setAudioRoute":
+            result(true)
+            break
+        case "refreshCallKitAudioSession":
+            refreshCallKitAudioSession()
             result(true)
             break
         default:
@@ -580,6 +585,15 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         configureCallKitAudioSession(context: context)
     }
 
+    private func refreshCallKitAudioSession() {
+        if didObserveUserRouteOverrideAfterAnswer {
+            debugLog("[CallKit-DEBUG] refreshCallKitAudioSession skipped context=trtc.onEnterRoom reason=userRouteOverrideObserved route=\(audioRouteDescription())")
+            return
+        }
+        configureIncomingCallKitAudioSession(context: "trtc.onEnterRoom")
+        updateSpeakerStateFromAudioRoute(reason: "trtc.onEnterRoom")
+    }
+
     @objc private func handleAudioSessionRouteChange(_ notification: Notification) {
         let activeCallCount = callManager.calls.filter { !$0.hasEnded }.count
         let reason = routeChangeReasonDescription(notification)
@@ -613,6 +627,9 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         let newSpeakerState = outputs.contains { $0.portType == .builtInSpeaker }
         let previousSpeakerState = isSpeakerOn
         let isInitial = previousSpeakerState == nil
+        if reason == "override" && previousSpeakerState != nil && newSpeakerState != previousSpeakerState {
+            didObserveUserRouteOverrideAfterAnswer = true
+        }
         let isUserSelection = false
         let beforeUserSelectedSpeakerOn = userSelectedSpeakerOn
         let didUpdateUserSelection = beforeUserSelectedSpeakerOn != userSelectedSpeakerOn
@@ -749,6 +766,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         userSelectedSpeakerOn = nil
         answerActionAt = nil
         lastSpeakerEventSentAt = nil
+        didObserveUserRouteOverrideAfterAnswer = false
     }
     
     public func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
@@ -773,6 +791,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             return
         }
         answerActionAt = Date()
+        didObserveUserRouteOverrideAfterAnswer = false
         debugLog("[CallKit-DEBUG] answer action started uuid=\(action.callUUID.uuidString) routeSeq=\(routeChangeSequence) trackedSpeaker=\(String(describing: isSpeakerOn)) userSelectedSpeaker=\(String(describing: userSelectedSpeakerOn)) route=\(audioRouteDescription())")
         self.configureCallKitAudioSession(context: "answerAction")
 
@@ -820,6 +839,7 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             userSelectedSpeakerOn = nil
             answerActionAt = nil
             lastSpeakerEventSentAt = nil
+            didObserveUserRouteOverrideAfterAnswer = false
         }
 
         // このコールが実際に応答済みかどうかをUUIDで確認

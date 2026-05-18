@@ -84,6 +84,10 @@ class FlutterCallkitIncoming {
     await _channel.invokeMethod("holdCall", {'id': id, 'isOnHold': isOnHold});
   }
 
+  static Future refreshCallKitAudioSession() async {
+    await _channel.invokeMethod("refreshCallKitAudioSession");
+  }
+
   /// End an Incoming/Outgoing call.
   /// On iOS, using Callkit(update a history into the Phone app).
   /// On Android, Nothing(only callback event listener).
